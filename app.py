@@ -1,15 +1,23 @@
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["fastapi", "uvicorn"]
+# dependencies = ["fastapi", "uvicorn", "mcp>=2.3,<3", "openai>=3,<4"]
 # ///
 """Crate: a small web front end for the music-discovery prompt.
 
-Serves index.html, lets you edit prompt.md, and runs Claude Code
-(with only the navidrome and lastfm MCP tools allowed) on demand.
-Each run is saved to picks/YYYY-MM-DD_HHMM.md.
+Serves index.html, lets you edit prompt.md, and runs the prompt on demand
+with only the MCP tools from .mcp.json. Each run is saved to
+picks/YYYY-MM-DD_HHMM.md.
+
+Two backends, picked with CRATE_BACKEND (environment or .env file):
+  claude (default)  runs Claude Code: `claude -p`
+  openai            any OpenAI-compatible model (OpenRouter, OpenAI, Ollama, ...),
+                    with Crate itself running the MCP servers (see agent.py)
 """
+import asyncio
 import json
+import os
 import pathlib
+import re
 import subprocess
 import threading
 import time
@@ -29,8 +37,36 @@ MARKS = BASE / "marks.json"  # {"artist|album" (lowercased): "got" | "love" | "p
 OLD_GOT = BASE / "got.json"  # earlier format: a list of keys marked as got
 PICKS.mkdir(exist_ok=True)
 
-ALLOWED_TOOLS = ["mcp__navidrome", "mcp__lastfm"]  # nothing else: no shell, no file edits, no web
-HISTORY_RUNS = 12             # how many past runs to show Claude so it doesn't repeat itself
+
+def load_dotenv(path=BASE / ".env"):
+    """Read KEY=value lines from .env without overriding the real environment."""
+    if not path.exists():
+        return
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            key, value = line.split("=", 1)
+            value = value.strip()
+            if value[:1] in ("'", '"'):
+                value = value[1:].split(value[0], 1)[0]  # quoted: keep everything inside the quotes
+            else:
+                value = re.split(r"\s+#", value, maxsplit=1)[0]  # unquoted: drop inline comments
+            os.environ.setdefault(key.strip(), value)
+
+
+load_dotenv()
+BACKEND = os.environ.get("CRATE_BACKEND", "claude").strip().lower()
+CLAUDE_MODEL = os.environ.get("CRATE_CLAUDE_MODEL", "")  # optional, e.g. claude-sonnet-5-5
+BASE_URL = os.environ.get("CRATE_BASE_URL", "")          # e.g. https://openrouter.ai/api/v1
+API_KEY = os.environ.get("CRATE_API_KEY", "")
+MODEL = os.environ.get("CRATE_MODEL", "")
+if BACKEND not in ("claude", "openai"):
+    raise SystemExit(f"CRATE_BACKEND must be 'claude' or 'openai', not {BACKEND!r}.")
+if BACKEND == "openai" and not MODEL:
+    raise SystemExit("CRATE_BACKEND=openai needs CRATE_MODEL (and usually CRATE_BASE_URL and CRATE_API_KEY).")
+
+ALLOWED_TOOLS = ["mcp__navidrome", "mcp__lastfm"]  # claude backend: nothing else, no shell, file edits or web
+HISTORY_RUNS = 12             # how many past runs to show the model so it doesn't repeat itself
 TIMEOUT_SECONDS = 15 * 60
 PORT = 8095
 
@@ -78,25 +114,44 @@ def build_prompt():
     )
 
 
-def run_claude():
+def run_claude(prompt):
+    cmd = ["claude", "-p", prompt, "--allowedTools", *ALLOWED_TOOLS]
+    if CLAUDE_MODEL:
+        cmd += ["--model", CLAUDE_MODEL]
     try:
-        result = subprocess.run(
-            ["claude", "-p", build_prompt(), "--allowedTools", *ALLOWED_TOOLS],
-            cwd=BASE,
-            capture_output=True,
-            text=True,
-            timeout=TIMEOUT_SECONDS,
+        result = subprocess.run(cmd, cwd=BASE, capture_output=True, text=True, timeout=TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        raise TimeoutError
+    output = result.stdout.strip()
+    if result.returncode != 0 or not output:
+        raise RuntimeError((result.stderr or output or "Claude returned no output.").strip()[-1500:])
+    return output
+
+
+def run_openai(prompt):
+    import agent
+
+    try:
+        output = agent.run_sync(
+            prompt, base_url=BASE_URL, api_key=API_KEY, model=MODEL,
+            mcp_json=BASE / ".mcp.json", timeout=TIMEOUT_SECONDS,
         )
-        output = result.stdout.strip()
-        if result.returncode != 0 or not output:
-            state["error"] = (result.stderr or output or "Claude returned no output.").strip()[-1500:]
-            return
+    except asyncio.TimeoutError:
+        raise TimeoutError
+    if not output:
+        raise RuntimeError("The model returned no output.")
+    return output
+
+
+def run_picks():
+    try:
+        output = (run_openai if BACKEND == "openai" else run_claude)(build_prompt())
         stamp = datetime.now().strftime("%Y-%m-%d_%H%M")
         (PICKS / f"{stamp}.md").write_text(output + "\n")
-    except subprocess.TimeoutExpired:
+    except TimeoutError:
         state["error"] = f"Stopped after {TIMEOUT_SECONDS // 60} minutes without finishing."
     except Exception as exc:
-        state["error"] = f"Couldn't run Claude: {exc}"
+        state["error"] = f"Run failed: {str(exc)[-1500:]}"
     finally:
         state["running"] = False
 
@@ -117,7 +172,7 @@ def start_run():
         if state["running"]:
             raise HTTPException(409, "A run is already in progress.")
         state.update(running=True, started=time.time(), error=None)
-    threading.Thread(target=run_claude, daemon=True).start()
+    threading.Thread(target=run_picks, daemon=True).start()
     return state
 
 

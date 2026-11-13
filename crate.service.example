@@ -8,6 +8,8 @@ Description=Crate music discovery page
 [Service]
 WorkingDirectory=/path/to/crate
 Environment=PATH=/path/to/node/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+# Backend settings can live in the project's .env file, or be set here, e.g.:
+# Environment=CRATE_BACKEND=openai
 ExecStart=%h/.local/bin/uv run app.py
 Restart=on-failure
 

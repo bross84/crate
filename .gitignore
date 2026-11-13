@@ -1,5 +1,6 @@
 # Credentials
 .mcp.json
+.env
 
 # Personal data
 prompt.md
