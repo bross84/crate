@@ -1,0 +1,16 @@
+# Credentials
+.mcp.json
+
+# Personal data
+prompt.md
+marks.json
+got.json
+picks/
+*.tmp
+
+# Local Claude Code settings
+.claude/settings.local.json
+
+# Python
+__pycache__/
+*.pyc

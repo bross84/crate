@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crate</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text x='50' y='50' font-size='90' text-anchor='middle' dominant-baseline='central'>💿</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+<style>
+  :root {
+    color-scheme: light;
+    --paper: #e4e3de; --ink: #141414; --muted: #5d5c57; --rule: #bfbdb5;
+    --field: #efeeea; --accent: #8e1b1b; --accent-ink: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --paper: #1b1b19; --ink: #e8e6e0; --muted: #9b998f; --rule: #3b3a35;
+      --field: #242421; --accent: #d2493a; --accent-ink: #140a08;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: Archivo, "Helvetica Neue", Arial, sans-serif; line-height: 1.5;
+  }
+  .wrap { max-width: 140rem; margin: 0 auto; padding: 2rem clamp(1rem, 3vw, 3rem) 4rem; }
+
+  header {
+    display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
+    gap: 1.5rem; border-bottom: 3px solid var(--ink); padding-bottom: 1rem;
+  }
+  h1 {
+    margin: 0; font-size: clamp(4.5rem, 15vw, 9.5rem); line-height: .78;
+    font-weight: 900; font-stretch: 62%; letter-spacing: -.01em;
+  }
+  .tag { margin: .6rem 0 0; color: var(--muted); }
+  .run { display: flex; flex-direction: column; align-items: flex-end; gap: .4rem; }
+
+  button { font: inherit; cursor: pointer; }
+  :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  #runBtn {
+    background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 2px;
+    padding: .9rem 1.6rem; font-weight: 800; font-size: 1.15rem; font-stretch: 75%;
+  }
+  #runBtn:disabled { opacity: .6; cursor: progress; }
+  #status { color: var(--muted); font-size: .9rem; min-height: 1.4em; text-align: right; max-width: 28rem; }
+  #status.err { color: var(--accent); }
+
+  .grid { display: grid; grid-template-columns: minmax(0, 1fr) clamp(18rem, 22vw, 24rem); gap: clamp(1.5rem, 3vw, 3rem); margin-top: 2rem; }
+  @media (max-width: 52rem) {
+    .grid { grid-template-columns: 1fr; }
+    .run { align-items: flex-start; }
+    #status { text-align: left; }
+  }
+  h2 { font-size: 1.5rem; font-weight: 800; font-stretch: 75%; margin: 0 0 .75rem; }
+  #picksMeta { color: var(--muted); margin: -.5rem 0 1rem; font-size: .9rem; }
+
+  .md { overflow-x: auto; }
+  .md table { border-collapse: collapse; width: 100%; font-size: .95rem; }
+  .md th, .md td { text-align: left; vertical-align: top; padding: .6rem .7rem; border-bottom: 1px solid var(--rule); }
+  .md th { border-bottom: 2px solid var(--ink); font-weight: 800; }
+  .md td:first-child:not(.mark), .md td.mark + td { font-weight: 700; }
+  .md a { color: var(--accent); }
+  .md td.listen { white-space: nowrap; }
+  .md td.mark { width: 1%; white-space: nowrap; padding-top: .45rem; }
+  .md td.mark button {
+    background: none; color: var(--muted); border: 1px solid var(--rule); border-radius: 2px;
+    display: inline-flex; align-items: center; justify-content: center; vertical-align: top;
+    height: 1.6rem; padding: 0 .45rem; font-size: .8rem; font-weight: 700; line-height: 1;
+  }
+  .md td.mark button + button { margin-left: .3rem; }
+  .md td.mark button:hover { color: var(--ink); border-color: var(--ink); }
+  .md td.mark button[data-mark="got"][aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .md td.mark button[data-mark="pass"][aria-pressed="true"] { background: var(--muted); border-color: var(--muted); color: var(--paper); }
+  .md tr.is-got td:not(.mark) { text-decoration: line-through; color: var(--muted); }
+  .md tr.is-got td:not(.mark) a { color: var(--muted); }
+  .md tr.is-pass td:not(.mark) { opacity: .4; }
+  .md td.mark button[data-mark="love"] { width: 1.6rem; padding: 0; font-size: .95rem; }
+  .md td.mark button[data-mark="love"][aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .md tr.is-love td { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .md tr.is-love td.mark { box-shadow: inset 4px 0 0 var(--accent); }
+  .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .md p, .md li { max-width: 70ch; }
+
+  .prompt { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--rule); }
+  textarea {
+    width: 100%; min-height: 16rem; resize: vertical; font: inherit; font-size: .9rem; line-height: 1.45;
+    padding: .75rem; background: var(--field); color: var(--ink); border: 1px solid var(--rule); border-radius: 2px;
+  }
+  .row { display: flex; gap: .75rem; align-items: center; margin-top: .6rem; }
+  .ghost {
+    background: none; border: 2px solid var(--ink); color: var(--ink);
+    padding: .45rem .9rem; font-weight: 700; border-radius: 2px;
+  }
+  #saveMsg { color: var(--muted); font-size: .9rem; }
+  #history { list-style: none; margin: 0; padding: 0; }
+  #history button {
+    width: 100%; text-align: left; background: none; border: 0; color: var(--ink);
+    border-bottom: 1px solid var(--rule); padding: .55rem 0;
+  }
+  #history button[aria-current="true"] { font-weight: 800; color: var(--accent); }
+  .empty { color: var(--muted); }
+  @media (prefers-reduced-motion: no-preference) {
+    #runBtn.busy { animation: pulse 1.6s ease-in-out infinite; }
+    @keyframes pulse { 50% { opacity: .75; } }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Crate</h1>
+      <p class="tag">Album picks from what you’ve been playing.</p>
+    </div>
+    <div class="run">
+      <button id="runBtn">Dig up new picks</button>
+      <div id="status" role="status"></div>
+    </div>
+  </header>
+
+  <div class="grid">
+    <main>
+      <h2>Latest picks</h2>
+      <p id="picksMeta"></p>
+      <div id="picks" class="md">
+        <p class="empty">No picks yet. Press “Dig up new picks” to run your prompt.</p>
+      </div>
+
+      <section class="prompt">
+        <h2>Prompt</h2>
+        <textarea id="prompt" spellcheck="false" aria-label="Prompt"></textarea>
+        <div class="row">
+          <button class="ghost" id="saveBtn">Save prompt</button>
+          <span id="saveMsg" role="status"></span>
+        </div>
+      </section>
+    </main>
+
+    <aside>
+      <section>
+        <h2>Earlier picks</h2>
+        <ul id="history"></ul>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<script>
+  const $ = (s) => document.querySelector(s);
+  let poll = null;
+  let current = null;
+
+  async function api(path, opts = {}) {
+    const r = await fetch(path, opts);
+    if (!r.ok) {
+      let msg = await r.text();
+      try { msg = JSON.parse(msg).detail || msg; } catch {}
+      throw new Error(msg || r.statusText);
+    }
+    return (r.headers.get("content-type") || "").includes("json") ? r.json() : r.text();
+  }
+
+  function niceName(n) {
+    const [d, t] = n.replace(".md", "").split("_");
+    return `${d} at ${t.slice(0, 2)}:${t.slice(2)}`;
+  }
+
+  function setStatus(msg, isError = false) {
+    $("#status").textContent = msg;
+    $("#status").classList.toggle("err", isError);
+  }
+
+  // Turn the Bandcamp column into a "Listen" column with Bandcamp + YouTube search links.
+  function addListenLinks(root) {
+    root.querySelectorAll("table").forEach((table) => {
+      const ths = [...table.querySelectorAll("thead th")];
+      const heads = ths.map((th) => th.textContent.trim().toLowerCase());
+      const ai = heads.indexOf("artist"), bi = heads.indexOf("album");
+      if (ai < 0 || bi < 0) return;
+      let li = heads.indexOf("bandcamp");
+      if (li < 0) {
+        li = ths.length;
+        table.querySelector("thead tr").append(document.createElement("th"));
+      }
+      table.querySelectorAll("thead th")[li].textContent = "Listen";
+      table.querySelectorAll("tbody tr").forEach((tr) => {
+        const cells = tr.children;
+        if (!cells[ai] || !cells[bi]) return;
+        const cell = cells[li] || tr.appendChild(document.createElement("td"));
+        cell.classList.add("listen");
+        cell.querySelectorAll('a[href*="bandcamp.com"]').forEach((a) => (a.textContent = "Bandcamp"));
+        const q = `${cells[ai].textContent.trim()} ${cells[bi].textContent.trim()}`;
+        const yt = document.createElement("a");
+        yt.href = "https://www.youtube.com/results?search_query=" + encodeURIComponent(q);
+        yt.textContent = "YouTube";
+        if (cell.textContent.trim()) cell.append(" · ");
+        cell.append(yt);
+      });
+      addMarkButtons(table, ai, bi);
+    });
+  }
+
+  // "Got" / "Pass" toggles at the start of each row, saved on the server.
+  // Got strikes the row through; Pass fades it out. Pressing the active one clears it.
+  let marks = {};
+  const markKey = (artist, album) => `${artist}|${album}`.toLowerCase();
+
+  function showMark(tr, mark) {
+    tr.classList.toggle("is-got", mark === "got");
+    tr.classList.toggle("is-pass", mark === "pass");
+    tr.classList.toggle("is-love", mark === "love");
+    tr.querySelectorAll(".mark button").forEach((b) =>
+      b.setAttribute("aria-pressed", String(b.dataset.mark === mark)));
+  }
+
+  function addMarkButtons(table, ai, bi) {
+    const th = document.createElement("th");
+    th.innerHTML = '<span class="visually-hidden">Mark</span>';
+    table.querySelector("thead tr").prepend(th);
+    table.querySelectorAll("tbody tr").forEach((tr) => {
+      const artist = tr.children[ai]?.textContent.trim() || "";
+      const album = tr.children[bi]?.textContent.trim() || "";
+      const key = markKey(artist, album);
+      const td = document.createElement("td");
+      td.className = "mark";
+      for (const [mark, label, title] of [["got", "Got", "I got this"], ["love", "♥", "Loved it"], ["pass", "Pass", "Not interested"]]) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.dataset.mark = mark;
+        b.textContent = label;
+        b.title = title;
+        b.setAttribute("aria-label", `${title}: ${album} by ${artist}`);
+        b.onclick = async () => {
+          const before = marks[key] || null;
+          const next = before === mark ? null : mark;
+          showMark(tr, next);
+          try {
+            await api("/api/marks", {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ key, mark: next }),
+            });
+            if (next) marks[key] = next; else delete marks[key];
+          } catch (e) {
+            showMark(tr, before);
+            setStatus(`Couldn’t save: ${e.message}`, true);
+          }
+        };
+        td.append(b);
+      }
+      tr.prepend(td);
+      showMark(tr, marks[key] || null);
+    });
+  }
+
+  async function showPick(name) {
+    const text = await api(`/api/picks/${encodeURIComponent(name)}`);
+    $("#picks").innerHTML = DOMPurify.sanitize(marked.parse(text));
+    addListenLinks($("#picks"));
+    $("#picks").querySelectorAll("a").forEach((a) => { a.target = "_blank"; a.rel = "noopener"; });
+    $("#picksMeta").textContent = `Run on ${niceName(name)}`;
+    current = name;
+    document.querySelectorAll("#history button").forEach((b) =>
+      b.setAttribute("aria-current", String(b.dataset.name === name)));
+  }
+
+  async function loadHistory(showNewest) {
+    const names = await api("/api/picks");
+    const list = $("#history");
+    list.innerHTML = "";
+    if (!names.length) { list.innerHTML = '<li class="empty">Nothing yet.</li>'; return; }
+    for (const n of names) {
+      const li = document.createElement("li");
+      const b = document.createElement("button");
+      b.textContent = niceName(n);
+      b.dataset.name = n;
+      b.onclick = () => showPick(n);
+      li.append(b);
+      list.append(li);
+    }
+    await showPick(showNewest || !current ? names[0] : current);
+  }
+
+  async function checkState() {
+    const st = await api("/api/state");
+    const btn = $("#runBtn");
+    if (st.running) {
+      btn.disabled = true;
+      btn.classList.add("busy");
+      const s = Math.floor(Date.now() / 1000 - st.started);
+      setStatus(`Digging… ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}. This usually takes a few minutes.`);
+      if (!poll) poll = setInterval(checkState, 3000);
+      return;
+    }
+    btn.disabled = false;
+    btn.classList.remove("busy");
+    if (poll) {
+      clearInterval(poll);
+      poll = null;
+      if (st.error) setStatus(st.error, true);
+      else { setStatus("Done. New picks are below."); await loadHistory(true); }
+    }
+  }
+
+  $("#runBtn").onclick = async () => {
+    setStatus("Starting…");
+    try { await api("/api/run", { method: "POST" }); await checkState(); }
+    catch (e) { setStatus(e.message, true); }
+  };
+
+  $("#saveBtn").onclick = async () => {
+    try {
+      await api("/api/prompt", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: $("#prompt").value }),
+      });
+      $("#saveMsg").textContent = "Prompt saved";
+      setTimeout(() => ($("#saveMsg").textContent = ""), 2500);
+    } catch (e) { $("#saveMsg").textContent = e.message; }
+  };
+
+  (async () => {
+    try {
+      $("#prompt").value = (await api("/api/prompt")).text;
+      marks = await api("/api/marks");
+      await loadHistory(false);
+      await checkState();
+    } catch (e) { setStatus(`Couldn’t reach the server: ${e.message}`, true); }
+  })();
+</script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+# Optional: run Crate in the background as a systemd user service.
+# Copy to ~/.config/systemd/user/crate.service, fix the paths, then:
+#   systemctl --user daemon-reload && systemctl --user enable --now crate.service
+# PATH must include the directories holding `claude`, `uv`, and `npx`.
+[Unit]
+Description=Crate music discovery page
+
+[Service]
+WorkingDirectory=/path/to/crate
+Environment=PATH=/path/to/node/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=%h/.local/bin/uv run app.py
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

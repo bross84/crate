@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "navidrome": {
+      "command": "npx",
+      "args": ["-y", "navidrome-mcp"],
+      "env": {
+        "NAVIDROME_URL": "http://your-navidrome-host:4533",
+        "NAVIDROME_USERNAME": "your-username",
+        "NAVIDROME_PASSWORD": "your-password",
+        "LASTFM_API_KEY": "your-lastfm-api-key",
+        "WEBUI_ENABLED": "false"
+      }
+    },
+    "lastfm": {
+      "command": "uv",
+      "args": ["run", "--with", "lastfm-mcp", "--with", "mcp<2", "--python", "3.10", "lastfm-mcp"],
+      "env": {
+        "LASTFM_API_KEY": "your-lastfm-api-key"
+      }
+    }
+  }
+}
