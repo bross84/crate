@@ -11,5 +11,5 @@ Use the lastfm and navidrome MCP tools. My Last.fm username is YOUR_LASTFM_USERN
 5. Don't repeat anything listed under "Previously suggested".
 
 Reply with only a markdown table with these columns: Artist, Album, Year, Why it fits, Bandcamp.
-In the Bandcamp column, put a link titled "Search" to https://bandcamp.com/search?q= followed by the artist and album name, URL-encoded.
+In the Bandcamp column, put a link titled "Search" to https://bandcamp.com/search?item_type=a&q= followed by the artist and album name, URL-encoded.
 No intro or closing text. If a tool failed, add one short line under the table saying which one.

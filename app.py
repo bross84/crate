@@ -97,6 +97,10 @@ def build_prompt():
 
     return (
         f"{prompt}\n\n"
+        "## Checking my Navidrome library\n"
+        "Use Navidrome's search_all to check whether I own an artist or album: one call returns "
+        "matching artists and albums. Don't use search_artists. It rejects every call in "
+        "navidrome-mcp 3.0.0, so there's no need to mention it.\n\n"
         "## Previously suggested (do not repeat any of these albums)\n"
         f"{past or '(none yet)'}\n\n"
         "## Earlier picks I loved (artist – album)\n"
@@ -187,6 +191,8 @@ def get_prompt():
 
 @app.put("/api/prompt")
 def put_prompt(body: PromptIn):
+    if not body.text.strip():
+        raise HTTPException(400, "The prompt can't be empty.")
     PROMPT.write_text(body.text)
     return {"ok": True}
 

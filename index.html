@@ -133,11 +133,17 @@
       </div>
 
       <section class="prompt">
-        <h2>Prompt</h2>
-        <textarea id="prompt" spellcheck="false" aria-label="Prompt"></textarea>
         <div class="row">
-          <button class="ghost" id="saveBtn">Save prompt</button>
+          <button class="ghost" id="editBtn" aria-expanded="false" aria-controls="promptEditor">Edit prompt</button>
           <span id="saveMsg" role="status"></span>
+        </div>
+        <div id="promptEditor" hidden>
+          <h2>Prompt</h2>
+          <textarea id="prompt" spellcheck="false" aria-label="Prompt"></textarea>
+          <div class="row">
+            <button class="ghost" id="saveBtn">Save</button>
+            <button class="ghost" id="cancelBtn">Cancel</button>
+          </div>
         </div>
       </section>
     </main>
@@ -194,13 +200,14 @@
         if (!cells[ai] || !cells[bi]) return;
         const cell = cells[li] || tr.appendChild(document.createElement("td"));
         cell.classList.add("listen");
-        cell.querySelectorAll('a[href*="bandcamp.com"]').forEach((a) => (a.textContent = "Bandcamp"));
         const q = `${cells[ai].textContent.trim()} ${cells[bi].textContent.trim()}`;
-        const yt = document.createElement("a");
-        yt.href = "https://www.youtube.com/results?search_query=" + encodeURIComponent(q);
-        yt.textContent = "YouTube";
-        if (cell.textContent.trim()) cell.append(" · ");
-        cell.append(yt);
+        const link = (href, text) => Object.assign(document.createElement("a"), { href, textContent: text });
+        // Built here rather than trusting the model's link, so every row searches albums only.
+        cell.replaceChildren(
+          link("https://bandcamp.com/search?" + new URLSearchParams({ q, item_type: "a" }), "Bandcamp"),
+          " · ",
+          link("https://www.youtube.com/results?" + new URLSearchParams({ search_query: q }), "YouTube"),
+        );
       });
       addMarkButtons(table, ai, bi);
     });
@@ -314,21 +321,48 @@
     catch (e) { setStatus(e.message, true); }
   };
 
+  // The prompt stays hidden until "Edit prompt" is pressed, so it can't be changed by accident.
+  function flash(msg) {
+    $("#saveMsg").textContent = msg;
+    setTimeout(() => ($("#saveMsg").textContent = ""), 3000);
+  }
+
+  function showEditor(open) {
+    $("#promptEditor").hidden = !open;
+    $("#editBtn").hidden = open;
+    $("#editBtn").setAttribute("aria-expanded", String(open));
+  }
+
+  $("#editBtn").onclick = async () => {
+    try {
+      $("#prompt").value = (await api("/api/prompt")).text;  // always edit the latest saved version
+      showEditor(true);
+      $("#prompt").focus();
+    } catch (e) { flash(`Couldn’t load the prompt: ${e.message}`); }
+  };
+
+  $("#cancelBtn").onclick = () => {
+    showEditor(false);
+    $("#editBtn").focus();
+  };
+
   $("#saveBtn").onclick = async () => {
+    const text = $("#prompt").value;
+    if (!text.trim()) { flash("The prompt can’t be empty."); return; }
     try {
       await api("/api/prompt", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: $("#prompt").value }),
+        body: JSON.stringify({ text }),
       });
-      $("#saveMsg").textContent = "Prompt saved";
-      setTimeout(() => ($("#saveMsg").textContent = ""), 2500);
-    } catch (e) { $("#saveMsg").textContent = e.message; }
+      showEditor(false);
+      $("#editBtn").focus();
+      flash("Prompt saved");
+    } catch (e) { flash(e.message); }
   };
 
   (async () => {
     try {
-      $("#prompt").value = (await api("/api/prompt")).text;
       marks = await api("/api/marks");
       await loadHistory(false);
       await checkState();

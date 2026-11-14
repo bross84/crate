@@ -32,6 +32,17 @@ Either way, the model can only use the Navidrome and Last.fm tools: no shell, fi
   - [Claude Code](https://claude.com/claude-code), installed and logged in (`claude` on your PATH), for the default backend
   - An API key for any OpenAI-compatible provider, or a local model server, for the `openai` backend
 
+## MCP servers
+
+Crate gives the model two [MCP](https://modelcontextprotocol.io/) servers, set up in `.mcp.json`:
+
+| Server | Package | What the model uses it for |
+|---|---|---|
+| `navidrome` | [navidrome-mcp](https://github.com/Blakeem/Navidrome-MCP) (npm) | Searching your library, so it skips albums you already own |
+| `lastfm` | [lastfm-mcp](https://pypi.org/project/lastfm-mcp/) (PyPI) | Your listening history and similar artists |
+
+You don't install them yourself. `npx` and `uv` download them the first time a run starts, so the first run takes a little longer. `.mcp.example.json` already has the right commands. You only add your Navidrome login and Last.fm API key.
+
 ## Setup
 
 ```sh
@@ -54,7 +65,7 @@ claude
 uv run app.py
 ```
 
-Open <http://localhost:8095>. Before your first run, edit the prompt on the page: put in your Last.fm username, describe your taste, and press **Save prompt**. It starts from `prompt.example.md` and is saved to `prompt.md`.
+Open <http://localhost:8095>. Before your first run, press **Edit prompt** at the bottom of the page, put in your Last.fm username, describe your taste, and press **Save**. It starts from `prompt.example.md` and is saved to `prompt.md`.
 
 To keep Crate running in the background, see `crate.service.example` for a systemd user service.
 
