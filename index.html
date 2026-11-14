@@ -98,13 +98,38 @@
     padding: .45rem .9rem; font-weight: 700; border-radius: 2px;
   }
   #saveMsg { color: var(--muted); font-size: .9rem; }
-  #history { list-style: none; margin: 0; padding: 0; }
   #history button {
     width: 100%; text-align: left; background: none; border: 0; color: var(--ink);
     border-bottom: 1px solid var(--rule); padding: .55rem 0;
   }
   #history button[aria-current="true"] { font-weight: 800; color: var(--accent); }
   .empty { color: var(--muted); }
+
+  .search { margin-bottom: 2rem; }
+  #search {
+    width: 100%; font: inherit; padding: .55rem .7rem; background: var(--field); color: var(--ink);
+    border: 1px solid var(--rule); border-radius: 2px;
+  }
+  #search:focus { border-color: var(--ink); }
+  .meta-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem 1rem; margin: -.5rem 0 1rem; }
+  .meta-row #picksMeta { margin: 0; }
+  .link {
+    background: none; border: 0; padding: 0; color: var(--muted); font-size: .9rem;
+    text-decoration: underline; text-underline-offset: .2em;
+  }
+  .link:hover { color: var(--ink); }
+  .link.danger:hover { color: var(--accent); }
+  .md td.from { white-space: nowrap; }
+  .md td.from .link { font-size: inherit; }
+  #archivedBox { margin-top: 1.5rem; }
+  #archivedBox summary { cursor: pointer; font-weight: 700; color: var(--muted); }
+  #archivedBox[open] summary { margin-bottom: .4rem; }
+  #history, #archived { list-style: none; margin: 0; padding: 0; }
+  #archived button {
+    width: 100%; text-align: left; background: none; border: 0; color: var(--muted);
+    border-bottom: 1px solid var(--rule); padding: .55rem 0;
+  }
+  #archived button[aria-current="true"] { font-weight: 800; color: var(--accent); }
   @media (prefers-reduced-motion: no-preference) {
     #runBtn.busy { animation: pulse 1.6s ease-in-out infinite; }
     @keyframes pulse { 50% { opacity: .75; } }
@@ -126,8 +151,13 @@
 
   <div class="grid">
     <main>
-      <h2>Latest picks</h2>
-      <p id="picksMeta"></p>
+      <h2 id="picksTitle">Latest picks</h2>
+      <div class="meta-row">
+        <p id="picksMeta"></p>
+        <button class="link" id="archiveBtn" hidden>Archive this list</button>
+        <button class="link" id="restoreBtn" hidden>Restore</button>
+        <button class="link danger" id="deleteBtn" hidden>Delete permanently</button>
+      </div>
       <div id="picks" class="md">
         <p class="empty">No picks yet. Press “Dig up new picks” to run your prompt.</p>
       </div>
@@ -149,10 +179,18 @@
     </main>
 
     <aside>
+      <section class="search" role="search">
+        <label for="search"><h2>Search</h2></label>
+        <input id="search" type="search" placeholder="Artist, album, genre…" autocomplete="off">
+      </section>
       <section>
         <h2>Earlier picks</h2>
         <ul id="history"></ul>
       </section>
+      <details id="archivedBox" hidden>
+        <summary>Archived (<span id="archivedCount">0</span>)</summary>
+        <ul id="archived"></ul>
+      </details>
     </aside>
   </div>
 </div>
@@ -160,7 +198,10 @@
 <script>
   const $ = (s) => document.querySelector(s);
   let poll = null;
-  let current = null;
+  let current = null;                        // the run shown when not searching
+  let lists = { active: [], archived: [] };  // run names, newest first
+  let searchIndex = null;                    // parsed rows of every run, loaded on first search
+  let searching = false;
 
   async function api(path, opts = {}) {
     const r = await fetch(path, opts);
@@ -266,33 +307,167 @@
     });
   }
 
-  async function showPick(name) {
-    const text = await api(`/api/picks/${encodeURIComponent(name)}`);
-    $("#picks").innerHTML = DOMPurify.sanitize(marked.parse(text));
+  function renderPicks(content) {  // an HTML string, or a node to show as is
+    if (typeof content === "string") $("#picks").innerHTML = content;
+    else $("#picks").replaceChildren(content);
     addListenLinks($("#picks"));
     $("#picks").querySelectorAll("a").forEach((a) => { a.target = "_blank"; a.rel = "noopener"; });
-    $("#picksMeta").textContent = `Run on ${niceName(name)}`;
-    current = name;
-    document.querySelectorAll("#history button").forEach((b) =>
-      b.setAttribute("aria-current", String(b.dataset.name === name)));
   }
 
-  async function loadHistory(showNewest) {
-    const names = await api("/api/picks");
-    const list = $("#history");
-    list.innerHTML = "";
-    if (!names.length) { list.innerHTML = '<li class="empty">Nothing yet.</li>'; return; }
-    for (const n of names) {
+  // Title, "Run on …" line, Archive/Restore/Delete buttons and the sidebar highlight.
+  function updateView() {
+    const archived = lists.archived.includes(current);
+    $("#picksTitle").textContent = searching ? "Search results"
+      : archived ? "Archived picks"
+      : current && current !== lists.active[0] ? "Earlier picks" : "Latest picks";
+    if (!searching) $("#picksMeta").textContent = current ? `Run on ${niceName(current)}` : "";
+    $("#archiveBtn").hidden = searching || !current || archived;
+    $("#restoreBtn").hidden = $("#deleteBtn").hidden = searching || !archived;
+    document.querySelectorAll("#history button, #archived button").forEach((b) =>
+      b.setAttribute("aria-current", String(!searching && b.dataset.name === current)));
+  }
+
+  async function showPick(name) {
+    if (!name) {
+      current = null;
+      if (!searching) $("#picks").innerHTML = lists.archived.length
+        ? '<p class="empty">No lists here. Archived lists are in the sidebar.</p>'
+        : '<p class="empty">No picks yet. Press “Dig up new picks” to run your prompt.</p>';
+      updateView();
+      return;
+    }
+    const text = await api(`/api/picks/${encodeURIComponent(name)}`);
+    current = name;
+    if (!searching) renderPicks(DOMPurify.sanitize(marked.parse(text)));
+    if (lists.archived.includes(name)) $("#archivedBox").open = true;
+    updateView();
+  }
+
+  function fillList(el, names) {
+    el.replaceChildren(...names.map((n) => {
       const li = document.createElement("li");
       const b = document.createElement("button");
       b.textContent = niceName(n);
       b.dataset.name = n;
-      b.onclick = () => showPick(n);
+      b.onclick = () => { clearSearch(false); showPick(n); };
       li.append(b);
-      list.append(li);
-    }
-    await showPick(showNewest || !current ? names[0] : current);
+      return li;
+    }));
   }
+
+  async function loadHistory(showNewest, next) {
+    lists = await api("/api/picks");
+    searchIndex = null;
+    fillList($("#history"), lists.active);
+    if (!lists.active.length) $("#history").innerHTML = '<li class="empty">Nothing yet.</li>';
+    fillList($("#archived"), lists.archived);
+    $("#archivedCount").textContent = lists.archived.length;
+    $("#archivedBox").hidden = !lists.archived.length;
+    const exists = (n) => n && (lists.active.includes(n) || lists.archived.includes(n));
+    const target = !showNewest && exists(next) ? next
+      : !showNewest && next === undefined && exists(current) ? current
+      : lists.active[0];
+    await showPick(target);
+    if (searching) await runSearch();
+  }
+
+  // Archive hides a list from "Earlier picks" (it still counts as suggested, so nothing repeats).
+  // Only archived lists can be deleted. Marks live separately, so deleting a list keeps them.
+  async function act(path, method, next) {
+    try {
+      await api(path, { method });
+      await loadHistory(false, next);
+    } catch (e) { setStatus(e.message, true); }
+  }
+  const neighbour = (names, n) => {
+    const i = names.indexOf(n);
+    return names[i + 1] ?? names[i - 1] ?? null;
+  };
+  $("#archiveBtn").onclick = () =>
+    act(`/api/picks/${encodeURIComponent(current)}/archive`, "POST", neighbour(lists.active, current));
+  $("#restoreBtn").onclick = () =>
+    act(`/api/picks/${encodeURIComponent(current)}/restore`, "POST", current);
+  $("#deleteBtn").onclick = () => {
+    if (!confirm(`Permanently delete the list from ${niceName(current)}? This can’t be undone. Your Got, ♥ and Pass marks are kept.`)) return;
+    act(`/api/picks/${encodeURIComponent(current)}`, "DELETE", neighbour(lists.archived, current) ?? lists.active[0] ?? null);
+  };
+
+  // Search every list, active and archived, for rows matching all the words typed.
+  const fold = (t) => t.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
+
+  async function getSearchIndex() {
+    if (searchIndex) return searchIndex;
+    const runs = await api("/api/search-index");
+    searchIndex = [];
+    for (const run of runs) {
+      const div = document.createElement("div");
+      div.innerHTML = DOMPurify.sanitize(marked.parse(run.text));
+      div.querySelectorAll("table").forEach((table) => {
+        const heads = [...table.querySelectorAll("thead th")].map((th) => th.textContent.trim());
+        table.querySelectorAll("tbody tr").forEach((tr) =>
+          searchIndex.push({ ...run, heads, cells: [...tr.children], text: fold(tr.textContent) }));
+      });
+    }
+    return searchIndex;
+  }
+
+  let searchToken = 0;
+  async function runSearch() {
+    const q = $("#search").value.trim();
+    if (!q) { clearSearch(); return; }
+    const token = ++searchToken;
+    searching = true;
+    let index;
+    try { index = await getSearchIndex(); }
+    catch (e) { setStatus(`Search failed: ${e.message}`, true); return; }
+    if (token !== searchToken || !searching) return;  // a newer search (or a clear) won
+
+    const words = fold(q).split(/\s+/);
+    const hits = index.filter((r) => words.every((w) => r.text.includes(w)));
+    $("#picksMeta").textContent =
+      `${hits.length} ${hits.length === 1 ? "album" : "albums"} matching “${q}” across all lists`;
+    updateView();
+    if (!hits.length) { $("#picks").innerHTML = '<p class="empty">No picks match.</p>'; return; }
+
+    // One table: the columns of every matching list (by name), plus where each row came from.
+    const cols = [];
+    hits.forEach((r) => r.heads.forEach((h) => { if (!cols.some((c) => c.toLowerCase() === h.toLowerCase())) cols.push(h); }));
+    const table = document.createElement("table");
+    const headRow = table.createTHead().insertRow();
+    [...cols, "From"].forEach((c) => headRow.append(Object.assign(document.createElement("th"), { textContent: c })));
+    const body = table.createTBody();
+    for (const r of hits) {
+      const tr = body.insertRow();
+      for (const c of cols) {
+        const i = r.heads.findIndex((h) => h.toLowerCase() === c.toLowerCase());
+        const td = i >= 0 && r.cells[i] ? r.cells[i].cloneNode(true) : document.createElement("td");
+        tr.append(td);
+      }
+      const from = tr.insertCell();
+      from.className = "from";
+      const b = Object.assign(document.createElement("button"), {
+        className: "link", textContent: niceName(r.name) + (r.archived ? " (archived)" : ""),
+      });
+      b.onclick = () => { clearSearch(false); showPick(r.name); };
+      from.append(b);
+    }
+    renderPicks(table);
+  }
+
+  function clearSearch(showCurrent = true) {
+    if (!searching && !$("#search").value) return;
+    searchToken++;
+    searching = false;
+    $("#search").value = "";
+    if (showCurrent) showPick(current);
+  }
+
+  let searchTimer = null;
+  $("#search").addEventListener("input", () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => ($("#search").value.trim() ? runSearch() : clearSearch()), 150);
+  });
+  $("#search").addEventListener("keydown", (e) => { if (e.key === "Escape") clearSearch(); });
 
   async function checkState() {
     const st = await api("/api/state");
@@ -311,7 +486,11 @@
       clearInterval(poll);
       poll = null;
       if (st.error) setStatus(st.error, true);
-      else { setStatus("Done. New picks are below."); await loadHistory(true); }
+      else {
+        setStatus("Done. New picks are below.");
+        clearSearch(false);
+        await loadHistory(true);
+      }
     }
   }
 

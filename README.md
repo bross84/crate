@@ -14,6 +14,10 @@ Then mark each pick:
 
 Your marks are fed back into every future run. Loved albums count most, Got albums count as liked, and passed albums are a mild "less of this" hint. Marked albums and anything from the last 12 runs are never suggested again.
 
+Use **Search** in the sidebar to find a pick across all your lists, by artist, album, year or any word in the description.
+
+To tidy up the sidebar, open a list and press **Archive this list**. Archived lists move to a collapsed "Archived" section, still show up in searches, and still count as suggested, so they won't come back. From there you can **Restore** a list or **Delete** it permanently. Deleting a list keeps your Got, ♥ and Pass marks.
+
 ## How it works
 
 - `app.py`: a FastAPI server that serves the page, stores your prompt and marks, and starts each run. Each run is saved to `picks/YYYY-MM-DD_HHMM.md`.

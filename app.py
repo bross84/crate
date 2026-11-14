@@ -31,11 +31,12 @@ from pydantic import BaseModel
 
 BASE = pathlib.Path(__file__).resolve().parent
 PICKS = BASE / "picks"
+ARCHIVE = PICKS / "archive"  # archived runs: hidden from the list, still searchable and still count as suggested
 PROMPT = BASE / "prompt.md"  # your own prompt (git-ignored); starts from prompt.example.md
 PROMPT_EXAMPLE = BASE / "prompt.example.md"
 MARKS = BASE / "marks.json"  # {"artist|album" (lowercased): "got" | "love" | "pass"}
 OLD_GOT = BASE / "got.json"  # earlier format: a list of keys marked as got
-PICKS.mkdir(exist_ok=True)
+ARCHIVE.mkdir(parents=True, exist_ok=True)
 
 
 def load_dotenv(path=BASE / ".env"):
@@ -82,13 +83,30 @@ def read_prompt():
     return ""
 
 
-def pick_files():
-    return sorted(PICKS.glob("*.md"), reverse=True)
+PICK_NAME = re.compile(r"\d{4}-\d{2}-\d{2}_\d{4}\.md")
+
+
+def pick_files(folder=PICKS):
+    return sorted(folder.glob("*.md"), reverse=True)
+
+
+def all_pick_files():
+    """Active and archived runs, newest first."""
+    return sorted(pick_files() + pick_files(ARCHIVE), key=lambda p: p.name, reverse=True)
+
+
+def find_pick(name):
+    """Return (path, archived) for a run name, or raise 404."""
+    if PICK_NAME.fullmatch(name):
+        for folder, archived in ((PICKS, False), (ARCHIVE, True)):
+            if (folder / name).exists():
+                return folder / name, archived
+    raise HTTPException(404, "No such picks file.")
 
 
 def build_prompt():
     prompt = read_prompt()
-    past = "\n\n".join(p.read_text() for p in pick_files()[:HISTORY_RUNS])
+    past = "\n\n".join(p.read_text() for p in all_pick_files()[:HISTORY_RUNS])
     marks = read_marks()
 
     def listed(kind):
@@ -236,15 +254,50 @@ def put_mark(body: MarkIn):
 
 @app.get("/api/picks")
 def list_picks():
-    return [p.name for p in pick_files()]
+    return {
+        "active": [p.name for p in pick_files()],
+        "archived": [p.name for p in pick_files(ARCHIVE)],
+    }
+
+
+@app.get("/api/search-index")
+def search_index():
+    """Every run's text, for searching across all picks in the page."""
+    return [
+        {"name": p.name, "archived": p.parent == ARCHIVE, "text": p.read_text()}
+        for p in all_pick_files()
+    ]
 
 
 @app.get("/api/picks/{name}", response_class=PlainTextResponse)
 def get_pick(name: str):
-    path = PICKS / name
-    if path.parent != PICKS or path.suffix != ".md" or not path.exists():
-        raise HTTPException(404, "No such picks file.")
-    return path.read_text()
+    return find_pick(name)[0].read_text()
+
+
+@app.post("/api/picks/{name}/archive")
+def archive_pick(name: str):
+    path, archived = find_pick(name)
+    if not archived:
+        path.replace(ARCHIVE / name)
+    return {"ok": True}
+
+
+@app.post("/api/picks/{name}/restore")
+def restore_pick(name: str):
+    path, archived = find_pick(name)
+    if archived:
+        path.replace(PICKS / name)
+    return {"ok": True}
+
+
+@app.delete("/api/picks/{name}")
+def delete_pick(name: str):
+    """Permanently delete an archived run. Marks on its albums are kept."""
+    path, archived = find_pick(name)
+    if not archived:
+        raise HTTPException(409, "Archive this run before deleting it.")
+    path.unlink()
+    return {"ok": True}
 
 
 if __name__ == "__main__":
