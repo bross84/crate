@@ -18,6 +18,8 @@ Use **Search** in the sidebar to find a pick across all your lists, by artist, a
 
 To tidy up the sidebar, open a list and press **Archive this list**. Archived lists move to a collapsed "Archived" section, still show up in searches, and still count as suggested, so they won't come back. From there you can **Restore** a list or **Delete** it permanently. Deleting a list keeps your Got, ♥ and Pass marks.
 
+To get new picks without pressing the button, use **Schedule** in the sidebar: pick the days and a time, and Crate digs up picks on its own while it's running. Times use the server's clock.
+
 ## How it works
 
 - `app.py`: a FastAPI server that serves the page, stores your prompt and marks, and starts each run. Each run is saved to `picks/YYYY-MM-DD_HHMM.md`.
@@ -109,4 +111,4 @@ The server listens on all network interfaces and has no login. Run it on a trust
 ## Your data stays local
 
 These files hold credentials or personal listening data. They're git-ignored and never committed:
-`.mcp.json`, `.env`, `prompt.md`, `marks.json`, `picks/`.
+`.mcp.json`, `.env`, `prompt.md`, `marks.json`, `schedule.json`, `picks/`.

@@ -21,7 +21,7 @@ import re
 import subprocess
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Literal
 
 import uvicorn
@@ -35,6 +35,7 @@ ARCHIVE = PICKS / "archive"  # archived runs: hidden from the list, still search
 PROMPT = BASE / "prompt.md"  # your own prompt (git-ignored); starts from prompt.example.md
 PROMPT_EXAMPLE = BASE / "prompt.example.md"
 MARKS = BASE / "marks.json"  # {"artist|album" (lowercased): "got" | "love" | "pass"}
+SCHEDULE = BASE / "schedule.json"  # {"enabled": bool, "days": [0-6, Monday = 0], "time": "HH:MM"}
 OLD_GOT = BASE / "got.json"  # earlier format: a list of keys marked as got
 ARCHIVE.mkdir(parents=True, exist_ok=True)
 
@@ -188,14 +189,83 @@ def get_state():
     return state
 
 
-@app.post("/api/run", status_code=202)
-def start_run():
+def try_start_run():
+    """Start a run in the background. False if one is already going."""
     with lock:
         if state["running"]:
-            raise HTTPException(409, "A run is already in progress.")
+            return False
         state.update(running=True, started=time.time(), error=None)
     threading.Thread(target=run_picks, daemon=True).start()
+    return True
+
+
+@app.post("/api/run", status_code=202)
+def start_run():
+    if not try_start_run():
+        raise HTTPException(409, "A run is already in progress.")
     return state
+
+
+# --- Schedule: automatic runs on chosen weekdays at a set time (server's local time) ---
+
+class ScheduleIn(BaseModel):
+    enabled: bool
+    days: list[int]
+    time: str
+
+
+def read_schedule():
+    try:
+        return ScheduleIn(**json.loads(SCHEDULE.read_text()))
+    except (FileNotFoundError, ValueError, TypeError):
+        return ScheduleIn(enabled=False, days=[0], time="07:00")
+
+
+def next_run(sched, now=None):
+    if not sched.enabled or not sched.days:
+        return None
+    now = now or datetime.now()
+    hour, minute = map(int, sched.time.split(":"))
+    for ahead in range(8):
+        when = (now + timedelta(days=ahead)).replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if when.weekday() in sched.days and when > now:
+            return when
+
+
+def scheduler():
+    fired = None  # the minute we last started a run for, so each slot runs once
+    while True:
+        now = datetime.now()
+        sched = read_schedule()
+        slot = now.strftime("%Y-%m-%d %H:%M")
+        if (sched.enabled and now.weekday() in sched.days
+                and now.strftime("%H:%M") == sched.time and slot != fired):
+            fired = slot
+            try_start_run()  # skipped quietly if a run is already going
+        time.sleep(20)
+
+
+@app.get("/api/schedule")
+def get_schedule():
+    sched = read_schedule()
+    when = next_run(sched)
+    return {**sched.model_dump(), "next": when.isoformat(timespec="minutes") if when else None}
+
+
+@app.put("/api/schedule")
+def put_schedule(body: ScheduleIn):
+    if not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", body.time):
+        raise HTTPException(400, "Time must be HH:MM, 24-hour.")
+    days = sorted(set(body.days))
+    if any(d not in range(7) for d in days):
+        raise HTTPException(400, "Days must be 0 (Monday) to 6 (Sunday).")
+    if body.enabled and not days:
+        raise HTTPException(400, "Pick at least one day.")
+    body.days = days
+    tmp = SCHEDULE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(body.model_dump(), indent=1))
+    tmp.replace(SCHEDULE)
+    return get_schedule()
 
 
 class PromptIn(BaseModel):
@@ -301,4 +371,5 @@ def delete_pick(name: str):
 
 
 if __name__ == "__main__":
+    threading.Thread(target=scheduler, daemon=True).start()
     uvicorn.run(app, host="0.0.0.0", port=PORT)

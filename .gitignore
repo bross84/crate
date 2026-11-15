@@ -5,6 +5,7 @@
 # Personal data
 prompt.md
 marks.json
+schedule.json
 got.json
 picks/
 *.tmp

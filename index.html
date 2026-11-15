@@ -130,6 +130,30 @@
     border-bottom: 1px solid var(--rule); padding: .55rem 0;
   }
   #archived button[aria-current="true"] { font-weight: 800; color: var(--accent); }
+
+  .schedule { margin-top: 2rem; }
+  #schedSummary { margin: 0 0 .3rem; }
+  #schedNext { margin: 0 0 .4rem; color: var(--muted); font-size: .9rem; }
+  #schedForm { margin-top: .6rem; }
+  #schedForm .check { display: flex; gap: .5rem; align-items: center; font-weight: 700; }
+  #schedForm input[type="checkbox"] { accent-color: var(--accent); width: 1rem; height: 1rem; margin: 0; }
+  .days { display: flex; flex-wrap: wrap; gap: .3rem; border: 0; padding: 0; margin: .8rem 0; }
+  .days legend { padding: 0; margin-bottom: .35rem; color: var(--muted); font-size: .9rem; }
+  .days label { position: relative; }
+  .days input { position: absolute; opacity: 0; inset: 0; }
+  .days span {
+    display: inline-flex; align-items: center; justify-content: center; min-width: 2.3rem; height: 1.8rem;
+    border: 1px solid var(--rule); border-radius: 2px; font-size: .8rem; font-weight: 700; color: var(--muted); cursor: pointer;
+  }
+  .days input:checked + span { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .days input:focus-visible + span { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .days input:disabled + span { opacity: .45; cursor: default; }
+  .time-row { display: flex; align-items: center; gap: .6rem; color: var(--muted); font-size: .9rem; }
+  #schedTime {
+    font: inherit; padding: .35rem .5rem; background: var(--field); color: var(--ink);
+    border: 1px solid var(--rule); border-radius: 2px;
+  }
+  #schedMsg { color: var(--accent); font-size: .9rem; min-height: 1.3em; margin: .4rem 0 0; }
   @media (prefers-reduced-motion: no-preference) {
     #runBtn.busy { animation: pulse 1.6s ease-in-out infinite; }
     @keyframes pulse { 50% { opacity: .75; } }
@@ -191,6 +215,24 @@
         <summary>Archived (<span id="archivedCount">0</span>)</summary>
         <ul id="archived"></ul>
       </details>
+      <section class="schedule">
+        <h2>Schedule</h2>
+        <p id="schedSummary"></p>
+        <p id="schedNext"></p>
+        <button class="link" id="schedEditBtn" aria-expanded="false" aria-controls="schedForm">Change schedule</button>
+        <form id="schedForm" hidden>
+          <label class="check"><input type="checkbox" id="schedOn"> Dig up new picks automatically</label>
+          <fieldset class="days" id="schedDays">
+            <legend>On</legend>
+          </fieldset>
+          <label class="time-row">At <input type="time" id="schedTime" required> (server time)</label>
+          <div class="row">
+            <button class="ghost" type="submit">Save</button>
+            <button class="ghost" type="button" id="schedCancel">Cancel</button>
+          </div>
+          <p id="schedMsg" role="status"></p>
+        </form>
+      </section>
     </aside>
   </div>
 </div>
@@ -540,8 +582,88 @@
     } catch (e) { flash(e.message); }
   };
 
+  // Schedule: automatic runs, set from the sidebar and run by the server.
+  const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+  let schedule = null;
+
+  const clock = (hhmm) => {
+    const [h, m] = hhmm.split(":").map(Number);
+    return new Date(2000, 0, 1, h, m).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  };
+  const joinWords = (xs) => xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`;
+
+  function describeSchedule(s) {
+    if (!s.enabled) return "Off. Picks are only dug up when you press the button.";
+    const d = s.days;
+    const when = d.length === 7 ? "Every day"
+      : d.join() === "0,1,2,3,4" ? "Weekdays"
+      : d.join() === "5,6" ? "Weekends"
+      : d.length === 1 ? `Every ${DAYS[d[0]]}`
+      : joinWords(d.map((i) => DAYS[i].slice(0, 3)));
+    return `${when} at ${clock(s.time)}`;
+  }
+
+  async function loadSchedule() {
+    schedule = await api("/api/schedule");
+    $("#schedSummary").textContent = describeSchedule(schedule);
+    $("#schedNext").textContent = schedule.next
+      ? "Next run: " + new Date(schedule.next).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+      : "";
+  }
+
+  $("#schedDays").append(...DAYS.map((name, i) => {
+    const label = document.createElement("label");
+    label.innerHTML = `<input type="checkbox" value="${i}" aria-label="${name}"><span aria-hidden="true">${name.slice(0, 3)}</span>`;
+    return label;
+  }));
+  const dayBoxes = () => [...document.querySelectorAll("#schedDays input")];
+  const syncDayBoxes = () => dayBoxes().forEach((b) => (b.disabled = !$("#schedOn").checked));
+
+  function showSchedForm(open) {
+    $("#schedForm").hidden = !open;
+    $("#schedEditBtn").hidden = open;
+    $("#schedEditBtn").setAttribute("aria-expanded", String(open));
+    $("#schedMsg").textContent = "";
+  }
+
+  $("#schedEditBtn").onclick = async () => {
+    try { await loadSchedule(); } catch (e) { setStatus(`Couldn’t load the schedule: ${e.message}`, true); return; }
+    $("#schedOn").checked = schedule.enabled;
+    dayBoxes().forEach((b) => (b.checked = schedule.days.includes(Number(b.value))));
+    $("#schedTime").value = schedule.time;
+    syncDayBoxes();
+    showSchedForm(true);
+    $("#schedOn").focus();
+  };
+  $("#schedOn").onchange = syncDayBoxes;
+  $("#schedCancel").onclick = () => { showSchedForm(false); $("#schedEditBtn").focus(); };
+
+  $("#schedForm").onsubmit = async (e) => {
+    e.preventDefault();
+    const body = {
+      enabled: $("#schedOn").checked,
+      days: dayBoxes().filter((b) => b.checked).map((b) => Number(b.value)),
+      time: $("#schedTime").value,
+    };
+    if (body.enabled && !body.days.length) { $("#schedMsg").textContent = "Pick at least one day."; return; }
+    if (!body.time) { $("#schedMsg").textContent = "Pick a time."; return; }
+    try {
+      await api("/api/schedule", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      await loadSchedule();
+      showSchedForm(false);
+      $("#schedEditBtn").focus();
+    } catch (err) { $("#schedMsg").textContent = err.message; }
+  };
+
+  // Notice runs started by the schedule (or another tab), and keep "Next run" current.
+  setInterval(() => {
+    if (!poll) checkState().catch(() => {});
+    if ($("#schedForm").hidden) loadSchedule().catch(() => {});
+  }, 60000);
+
   (async () => {
     try {
+      loadSchedule().catch(() => ($("#schedSummary").textContent = "Couldn’t load the schedule."));
       marks = await api("/api/marks");
       await loadHistory(false);
       await checkState();
