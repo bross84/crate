@@ -2,7 +2,7 @@
 
 A small self-hosted web page that suggests albums you probably haven't heard, based on what you've been listening to.
 
-![Crate showing a table of album picks, with Got, love and Pass marks on the first three rows](docs/screenshot.png)
+![Crate showing a table of album picks with Got, love and Pass marks on the first three rows, and the sidebar with search, earlier picks and the schedule set to every Monday at 7:00 AM](docs/screenshot.png)
 
 Press **Dig up new picks** and Crate runs your prompt through an AI model: [Claude Code](https://claude.com/claude-code) by default, or any OpenAI-compatible model (OpenRouter, OpenAI, Ollama, LM Studio) if you bring your own key. The model reads your Last.fm listening history, finds similar artists, checks your [Navidrome](https://www.navidrome.org/) library so it skips albums you already own, and returns a table of 10 picks. Each pick has Bandcamp and YouTube search links so you can preview it.
 
@@ -22,7 +22,7 @@ To get new picks without pressing the button, use **Schedule** in the sidebar: p
 
 ## How it works
 
-- `app.py`: a FastAPI server that serves the page, stores your prompt and marks, and starts each run. Each run is saved to `picks/YYYY-MM-DD_HHMM.md`.
+- `app.py`: a FastAPI server that serves the page, stores your prompt, marks and schedule, and starts each run, either when you press the button or on schedule. Each run is saved to `picks/YYYY-MM-DD_HHMM.md`, and archived lists move to `picks/archive/`.
 - `agent.py`: the runner for the `openai` backend. Crate starts the MCP servers from `.mcp.json` itself and passes tool calls between them and the model.
 - `index.html`: the whole front end, in one file with no build step.
 - The prompt the model gets is your `prompt.md`, followed by your recent picks, then your loved, got and passed albums.
@@ -73,7 +73,7 @@ uv run app.py
 
 Open <http://localhost:8095>. Before your first run, press **Edit prompt** at the bottom of the page, put in your Last.fm username, describe your taste, and press **Save**. It starts from `prompt.example.md` and is saved to `prompt.md`.
 
-To keep Crate running in the background, see `crate.service.example` for a systemd user service.
+To keep Crate running in the background, see `crate.service.example` for a systemd user service. Crate has to be running for scheduled runs to happen.
 
 ## Choosing a model
 
