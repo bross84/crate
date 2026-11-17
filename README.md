@@ -2,7 +2,7 @@
 
 A small self-hosted web page that suggests albums you probably haven't heard, based on what you've been listening to.
 
-![Crate showing a table of album picks with Got, love and Pass marks on the first three rows, and the sidebar with search, earlier picks and the schedule set to every Monday at 7:00 AM](docs/screenshot.png)
+![Crate showing a table of album picks with Got, love and Pass marks on the first three rows, and the sidebar with search, earlier picks and the schedule set to every Monday at 7:00 AM](docs/screenshot-schedule.png)
 
 Press **Dig up new picks** and Crate runs your prompt through an AI model: [Claude Code](https://claude.com/claude-code) by default, or any OpenAI-compatible model (OpenRouter, OpenAI, Ollama, LM Studio) if you bring your own key. The model reads your Last.fm listening history, finds similar artists, checks your [Navidrome](https://www.navidrome.org/) library so it skips albums you already own, and returns a table of 10 picks. Each pick has Bandcamp and YouTube search links so you can preview it.
 
