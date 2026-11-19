@@ -17,6 +17,14 @@
       "env": {
         "LASTFM_API_KEY": "your-lastfm-api-key"
       }
+    },
+    "listenbrainz": {
+      "command": "uv",
+      "args": ["run", "listenbrainz_mcp.py"],
+      "env": {
+        "LISTENBRAINZ_USERNAME": "your-listenbrainz-username",
+        "LISTENBRAINZ_TOKEN": ""
+      }
     }
   }
 }

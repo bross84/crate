@@ -67,7 +67,7 @@ if BACKEND not in ("claude", "openai"):
 if BACKEND == "openai" and not MODEL:
     raise SystemExit("CRATE_BACKEND=openai needs CRATE_MODEL (and usually CRATE_BASE_URL and CRATE_API_KEY).")
 
-ALLOWED_TOOLS = ["mcp__navidrome", "mcp__lastfm"]  # claude backend: nothing else, no shell, file edits or web
+ALLOWED_TOOLS = ["mcp__navidrome", "mcp__listenbrainz", "mcp__lastfm"]  # claude backend: nothing else, no shell, file edits or web
 HISTORY_RUNS = 12             # how many past runs to show the model so it doesn't repeat itself
 TIMEOUT_SECONDS = 15 * 60
 PORT = 8095
@@ -115,6 +115,7 @@ def build_prompt():
         return "\n".join(f"- {r}" for r in rows) or "(none yet)"
 
     return (
+        f"Today is {datetime.now():%Y-%m-%d}.\n\n"
         f"{prompt}\n\n"
         "## Checking my Navidrome library\n"
         "Use Navidrome's search_all to check whether I own an artist or album: one call returns "
