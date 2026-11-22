@@ -42,7 +42,7 @@ Either way, the model can only use the Navidrome, ListenBrainz and Last.fm tools
 - Node.js (`npx`), for the Navidrome MCP server. yt-dlp also needs it to get past YouTube's JavaScript checks when downloading previews.
 - A Navidrome server
 - A free [ListenBrainz](https://listenbrainz.org/) account with your listens in it. Navidrome can scrobble to ListenBrainz (turn it on under Personal in its web UI), and ListenBrainz can [import your Last.fm history](https://listenbrainz.org/settings/import/).
-- Optional: a [Last.fm API account](https://www.last.fm/api/account/create), for Last.fm history and scrobbling. Last.fm is moving API access behind a paid plan, so Crate doesn't depend on it.
+- Optional: a [Last.fm API account](https://www.last.fm/api/account/create), for Last.fm history and scrobbling.
 - One of:
   - [Claude Code](https://claude.com/claude-code), installed and logged in (`claude` on your PATH), for the default backend
   - An API key for any OpenAI-compatible provider, or a local model server, for the `openai` backend
@@ -57,7 +57,7 @@ Crate gives the model three [MCP](https://modelcontextprotocol.io/) servers. The
 | `listenbrainz` | `listenbrainz_mcp.py` (in this repo) | Your listening history, similar artists, and artists' albums |
 | `lastfm` | [lastfm-mcp](https://pypi.org/project/lastfm-mcp/) (PyPI) | Optional. Last.fm history and similar artists, if you have an API key |
 
-You don't install them yourself. `npx` and `uv` download them the first time a run starts, so the first run takes a little longer.
+`npx` and `uv` downloads them the first time a run starts, so the first run takes a little longer.
 
 On each run, Crate writes a private temporary MCP config with your saved accounts filled in and runs the model with only those servers. Last.fm is left out when there's no API key, and Navidrome when there's no address.
 
@@ -68,7 +68,7 @@ ListenBrainz stats cover calendar periods (`this_month`, `quarter`, `this_year`,
 ## Setup
 
 ```sh
-git clone <this repo> crate
+git clone https://github.com/bross84/crate.git
 cd crate
 
 # 1. Pick a backend (see "Choosing a model" below). The default, Claude Code,
@@ -115,18 +115,18 @@ After each run, Crate makes a playlist of a couple of songs per pick, so you can
 
 1. The songs are each album's most-played on ListenBrainz (this needs your ListenBrainz token). When ListenBrainz knows too little about an album, Crate takes its tracklist from MusicBrainz and ranks the songs by YouTube views.
 2. yt-dlp finds each song on YouTube, skipping live versions, covers and videos whose length doesn't match the album version, and downloads only the audio (Opus or AAC, about 130 kbps). ffmpeg isn't needed.
-3. The audio and a `playlist.json` go in `previews/<run>/`. Nothing is added to Navidrome or to any YouTube account.
+3. The audio and a `playlist.json` go in `previews/<run>/`. Nothing is added to Navidrome.
 
-A playlist takes a few minutes to build, and the page shows songs as they arrive. Archiving or deleting a list deletes its previews. **Make playlist** above a list builds one again, for example for a list from before this feature or one you restored. Previews take about 3–5 MB a song.
+A playlist takes a few minutes to build, and the page shows songs as they arrive. Archiving or deleting a list deletes its previews. **Make playlist** above a list builds one again. Previews take about 3–5 MB a song.
 
-YouTube changes often, and an old yt-dlp stops working. `crate.service.example` starts Crate with `uv run --upgrade-package yt-dlp app.py`, which checks for a newer yt-dlp on every start. Do the same if you start Crate by hand.
+`crate.service.example` starts Crate with `uv run --upgrade-package yt-dlp app.py`, which checks for a newer yt-dlp on every start. Do the same if you start Crate by hand.
 
-**Scrobbling.** The player can scrobble what you hear to ListenBrainz, Last.fm or both. The song shows as playing now when it starts, and a listen is recorded once you've heard half of it or 4 minutes, whichever comes first. Skipping ahead doesn't count toward that. Listens are sent by Crate's server, so your tokens never reach the browser. If a service is down, its listens are kept in `listens.pending.json` and retried every 10 minutes, with the time you actually heard them (Last.fm only takes scrobbles up to two weeks old). Each service has its own on/off switch under **Accounts** in Settings.
+**Scrobbling.** The player can scrobble what you hear to ListenBrainz, Last.fm or both. The song shows as playing now when it starts, and a listen is recorded once you've heard half of it or 4 minutes, whichever comes first. Listens are sent by Crate's server, so your tokens never reach the browser. If a service is down, its listens are kept in `listens.pending.json` and retried every 10 minutes, with the time you actually heard them (Last.fm only takes scrobbles up to two weeks old). Each service has its own on/off switch under **Accounts** in Settings.
 
 - **ListenBrainz:** on as soon as your token is saved.
-- **Last.fm:** create an [API account](https://www.last.fm/api/account/create) (any name and description; leave the callback URL blank), and save its API key and shared secret in Settings. Then press **Connect Last.fm** and allow Crate on the Last.fm page that opens; it sends you back to Settings. Crate keeps the session Last.fm gives it in `settings.json`. Note that Last.fm is moving API access behind its paid Pro plan. Keep in mind that scrobbled previews become part of the listening history future picks are based on.
+- **Last.fm:** create an [API account](https://www.last.fm/api/account/create) (any name and description; leave the callback URL blank), and save its API key and shared secret in Settings. Then press **Connect Last.fm** and allow Crate on the Last.fm page that opens; it sends you back to Settings. Crate keeps the session Last.fm gives it in `settings.json`. Keep in mind that scrobbled previews become part of the listening history future picks are based on.
 
-Matching isn't perfect: now and then a song is the wrong version or the wrong band. Downloading from YouTube is also against YouTube's terms. These are short-lived previews for deciding what to buy.
+Matching isn't perfect: now and then a song is the wrong version or the wrong band.
 
 ## Settings
 
