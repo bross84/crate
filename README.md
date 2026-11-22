@@ -117,7 +117,7 @@ A playlist takes a few minutes to build, and the page shows songs as they arrive
 
 YouTube changes often, and an old yt-dlp stops working. `crate.service.example` starts Crate with `uv run --upgrade-package yt-dlp app.py`, which checks for a newer yt-dlp on every start. Do the same if you start Crate by hand.
 
-**Scrobbling.** With a ListenBrainz token saved, the player scrobbles what you hear: ListenBrainz shows the song as playing now when it starts, and records a listen once you've heard half of it or 4 minutes, whichever comes first. Skipping ahead doesn't count toward that. Listens are sent by Crate's server, so your token never reaches the browser. If ListenBrainz is down, they're kept in `listens.pending.json` and sent with the next one. Turn it off under **Accounts** in Settings. Keep in mind that scrobbled previews become part of the listening history future picks are based on.
+**Scrobbling.** With a ListenBrainz token saved, the player scrobbles what you hear: ListenBrainz shows the song as playing now when it starts, and records a listen once you've heard half of it or 4 minutes, whichever comes first. Skipping ahead doesn't count toward that. Listens are sent by Crate's server, so your token never reaches the browser. If ListenBrainz is down, they're kept in `listens.pending.json` and retried every 10 minutes, with the time you actually heard them. Turn it off under **Accounts** in Settings. Keep in mind that scrobbled previews become part of the listening history future picks are based on.
 
 Matching isn't perfect: now and then a song is the wrong version or the wrong band. Downloading from YouTube is also against YouTube's terms. These are short-lived previews for deciding what to buy.
 

@@ -46,7 +46,7 @@ SCHEDULE = BASE / "schedule.json"  # {"enabled": bool, "days": [0-6, Monday = 0]
 OLD_GOT = BASE / "got.json"  # earlier format: a list of keys marked as got
 PREVIEWS = BASE / "previews"  # previews/<run>/: downloaded preview songs and playlist.json
 SETTINGS = BASE / "settings.json"  # accounts and scrobbling, from the settings page (holds tokens and passwords)
-PENDING_LISTENS = BASE / "listens.pending.json"  # listens ListenBrainz didn't take yet; sent with the next one
+PENDING_LISTENS = BASE / "listens.pending.json"  # listens ListenBrainz didn't take yet; retried every 10 minutes
 ARCHIVE.mkdir(parents=True, exist_ok=True)
 
 
@@ -451,25 +451,50 @@ def scrobble(body: ScrobbleIn):
 
     now = int(time.time())
     listen = listen_payload(track, min(body.listened_at or now, now))
-    with settings_lock:  # keep listens ListenBrainz couldn't take, and send them with the next one
+    with settings_lock:
         try:
-            pending = json.loads(PENDING_LISTENS.read_text())
-        except (FileNotFoundError, ValueError):
-            pending = []
-        try:
-            if pending:
-                submit_listens(token, "import", pending)
-                pending = []
             submit_listens(token, "single", [listen])
             sent = True
-        except httpx.HTTPError:
-            pending = (pending + [listen])[-500:]
+        except httpx.HTTPError:  # keep it; it's sent with the next one or by the retry loop
+            write_pending((read_pending() + [listen])[-500:])
             sent = False
-        if pending:
-            PENDING_LISTENS.write_text(json.dumps(pending))
-        else:
-            PENDING_LISTENS.unlink(missing_ok=True)
-    return {"sent": sent, "pending": len(pending)}
+    if sent:
+        threading.Thread(target=send_pending, daemon=True).start()  # ListenBrainz is up: catch up
+    return {"sent": sent, "pending": len(read_pending())}
+
+
+def read_pending():
+    try:
+        return json.loads(PENDING_LISTENS.read_text())
+    except (FileNotFoundError, ValueError):
+        return []
+
+
+def write_pending(listens):
+    if listens:
+        PENDING_LISTENS.write_text(json.dumps(listens))
+    else:
+        PENDING_LISTENS.unlink(missing_ok=True)
+
+
+def send_pending():
+    """Send listens ListenBrainz couldn't take earlier. Quietly keeps them if it's still down."""
+    with settings_lock:
+        pending = read_pending()
+        token = read_settings()["listenbrainz"]["token"]
+        if not (pending and token):
+            return
+        try:
+            submit_listens(token, "import", pending)
+        except httpx.HTTPError:
+            return
+        write_pending([])
+
+
+def retry_pending_listens():
+    while True:
+        send_pending()
+        time.sleep(10 * 60)
 
 
 # --- Preview playlists: a couple of songs per pick, downloaded to previews/<run>/ ---
@@ -750,4 +775,5 @@ def get_preview(name: str, file: str):
 
 if __name__ == "__main__":
     threading.Thread(target=scheduler, daemon=True).start()
+    threading.Thread(target=retry_pending_listens, daemon=True).start()
     uvicorn.run(app, host="0.0.0.0", port=PORT)
