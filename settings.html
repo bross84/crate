@@ -3,8 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-title" content="Crate">
 <title>Crate settings</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text x='50' y='50' font-size='90' text-anchor='middle' dominant-baseline='central'>💿</text></svg>">
+<link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&display=swap" rel="stylesheet">
@@ -93,6 +95,9 @@
   .msg.ok::before { content: "✓ "; color: #2e7d32; font-weight: 800; }
   @media (prefers-color-scheme: dark) { .msg.ok::before { color: #5cb860; } }
   #accountsSave { margin-top: .2rem; }
+  .hint-inline { font-size: .8rem; opacity: .85; }
+  .lfm-status { margin: .9rem 0 0; font-size: .9rem; color: var(--muted); }
+  .lfm-status strong { color: var(--ink); }
 </style>
 </head>
 <body>
@@ -149,12 +154,22 @@
 
       <fieldset class="account" data-service="lastfm">
         <legend>Last.fm <small>optional</small></legend>
-        <p class="hint">Extra listening history. Leave the API key blank to skip Last.fm.</p>
+        <p class="hint">Extra listening history, and scrobbling. Get an API key and shared secret by
+          <a href="https://www.last.fm/api/account/create" target="_blank" rel="noopener">creating a Last.fm API account</a>
+          (any name and description; leave the callback URL blank). Leave the API key blank to skip Last.fm.</p>
         <div class="fields">
           <label class="field">Username <input name="username" spellcheck="false" autocapitalize="off"></label>
           <label class="field">API key <span class="with-btn"><input name="api_key" type="password" autocomplete="new-password" spellcheck="false"></span></label>
+          <label class="field"><span>Shared secret <span class="hint-inline">(for scrobbling)</span></span><span class="with-btn"><input name="shared_secret" type="password" autocomplete="new-password" spellcheck="false"></span></label>
         </div>
-        <div class="row"><button class="ghost" type="button" data-test>Test</button><span class="msg" role="status"></span></div>
+        <p class="lfm-status" id="lfmStatus"></p>
+        <label class="check"><input type="checkbox" id="scrobbleLastfm"> Scrobble preview songs to Last.fm</label>
+        <div class="row">
+          <button class="ghost" type="button" data-test>Test</button>
+          <button class="ghost" type="button" id="lfmConnect">Connect Last.fm</button>
+          <button class="linkish" type="button" id="lfmDisconnect" hidden>Disconnect</button>
+          <span class="msg" role="status"></span>
+        </div>
       </fieldset>
 
       <fieldset class="account" data-service="navidrome">
@@ -263,16 +278,27 @@
   };
 
   // --- Accounts ---
-  const SECRETS = ["token", "api_key", "password"];
+  const SECRETS = ["token", "api_key", "password", "shared_secret"];
   const accountBoxes = () => [...document.querySelectorAll(".account")];
   let acctDirty = false;
 
   function showAccounts(s) {
     $("#scrobbleOn").checked = s.scrobble;
+    $("#scrobbleLastfm").checked = s.scrobble_lastfm;
+    const lfm = s.lastfm, connected = lfm.session_key.set;
+    $("#lfmStatus").innerHTML = "";
+    $("#lfmStatus").append(...(connected
+      ? ["Connected as ", Object.assign(document.createElement("strong"), { textContent: lfm.session_user }), "."]
+      : [lfm.api_key.set && lfm.shared_secret.set ? "Not connected yet. Press Connect Last.fm to allow scrobbling."
+         : "To scrobble, save an API key and shared secret, then press Connect Last.fm."]));
+    $("#lfmConnect").textContent = connected ? "Reconnect" : "Connect Last.fm";
+    $("#lfmDisconnect").hidden = !connected;
+    $("#scrobbleLastfm").disabled = !connected;
     for (const box of accountBoxes()) {
       const saved = s[box.dataset.service];
       for (const input of box.querySelectorAll("input[name]")) {
         const value = saved[input.name];
+        if (value === undefined) continue;
         if (!SECRETS.includes(input.name)) { input.value = value; continue; }
         input.value = "";
         delete input.dataset.clear;
@@ -293,7 +319,7 @@
   }
 
   function accountValues(only = null) {
-    const body = { scrobble: $("#scrobbleOn").checked };
+    const body = { scrobble: $("#scrobbleOn").checked, scrobble_lastfm: $("#scrobbleLastfm").checked };
     for (const box of accountBoxes()) {
       if (only && box.dataset.service !== only) continue;
       const fields = {};
@@ -334,6 +360,35 @@
     } catch (err) { say($("#acctMsg"), err.message, true); }
   };
   window.addEventListener("beforeunload", (e) => { if (acctDirty) e.preventDefault(); });
+
+  // Connect Last.fm: save what's on the form, then go to Last.fm to allow Crate; it sends you back here.
+  const lfmMsg = () => document.querySelector('[data-service="lastfm"] .msg');
+  $("#lfmConnect").onclick = async () => {
+    try {
+      const s = await api("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(accountValues()) });
+      showAccounts(s);
+      if (!s.lastfm.api_key.set || !s.lastfm.shared_secret.set) {
+        say(lfmMsg(), "Enter the API key and shared secret first.", true);
+        return;
+      }
+      location.href = `/lastfm/connect?origin=${encodeURIComponent(location.origin)}`;
+    } catch (e) { say(lfmMsg(), e.message, true); }
+  };
+  $("#lfmDisconnect").onclick = async () => {
+    try {
+      showAccounts(await api("/api/lastfm/disconnect", { method: "POST" }));
+      say(lfmMsg(), "Disconnected. Crate won’t scrobble to Last.fm.");
+    } catch (e) { say(lfmMsg(), e.message, true); }
+  };
+  {  // back from Last.fm
+    const q = new URLSearchParams(location.search);
+    if (q.has("lastfm") || q.has("lastfm_error")) {
+      const ok = q.get("lastfm") === "connected";
+      say(lfmMsg(), ok ? "Connected to Last.fm." : q.get("lastfm_error"), !ok);
+      lfmMsg().classList.toggle("ok", ok);
+      history.replaceState(null, "", "/settings#acctHead");
+    }
+  }
 
   loadPrompt().catch((e) => say($("#promptMsg"), `Couldn’t load the prompt: ${e.message}`, true));
   loadSchedule().catch((e) => say($("#schedMsg"), `Couldn’t load the schedule: ${e.message}`, true));

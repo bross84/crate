@@ -38,7 +38,7 @@ Either way, the model can only use the Navidrome, ListenBrainz and Last.fm tools
 - Node.js (`npx`), for the Navidrome MCP server. yt-dlp also needs it to get past YouTube's JavaScript checks when downloading previews.
 - A Navidrome server
 - A free [ListenBrainz](https://listenbrainz.org/) account with your listens in it. Navidrome can scrobble to ListenBrainz (turn it on under Personal in its web UI), and ListenBrainz can [import your Last.fm history](https://listenbrainz.org/settings/import/).
-- Optional: a [Last.fm API key](https://www.last.fm/api/account/create). Last.fm is moving API access behind a paid plan, so Crate no longer depends on it, but the `lastfm` server is still set up if you have a key.
+- Optional: a [Last.fm API account](https://www.last.fm/api/account/create), for Last.fm history and scrobbling. Last.fm is moving API access behind a paid plan, so Crate doesn't depend on it.
 - One of:
   - [Claude Code](https://claude.com/claude-code), installed and logged in (`claude` on your PATH), for the default backend
   - An API key for any OpenAI-compatible provider, or a local model server, for the `openai` backend
@@ -77,7 +77,7 @@ uv run app.py
 
 Open <http://localhost:8095> and go to **Settings** (under the button):
 
-1. Under **Accounts**, enter your ListenBrainz username and token, and optionally your Navidrome login and a Last.fm username and API key. Press **Test** on each, then **Save accounts**. They're saved in `settings.json` (readable only by you), and tokens and passwords aren't shown on the page again.
+1. Under **Accounts**, enter your ListenBrainz username and token, and optionally your Navidrome login and your Last.fm details (see below). Press **Test** on each, then **Save accounts**. They're saved in `settings.json` (readable only by you), and tokens and passwords aren't shown on the page again.
 2. Edit the prompt if you like and press **Save prompt**. It starts from `prompt.example.md` and is saved to `prompt.md`.
 
 If you already have a `.mcp.json` with your accounts in it, Crate copies them into `settings.json` the first time it starts. After that, `settings.json` is what runs use; `.mcp.json` is only read for the server commands, and for your own `claude` sessions in this folder.
@@ -117,7 +117,10 @@ A playlist takes a few minutes to build, and the page shows songs as they arrive
 
 YouTube changes often, and an old yt-dlp stops working. `crate.service.example` starts Crate with `uv run --upgrade-package yt-dlp app.py`, which checks for a newer yt-dlp on every start. Do the same if you start Crate by hand.
 
-**Scrobbling.** With a ListenBrainz token saved, the player scrobbles what you hear: ListenBrainz shows the song as playing now when it starts, and records a listen once you've heard half of it or 4 minutes, whichever comes first. Skipping ahead doesn't count toward that. Listens are sent by Crate's server, so your token never reaches the browser. If ListenBrainz is down, they're kept in `listens.pending.json` and retried every 10 minutes, with the time you actually heard them. Turn it off under **Accounts** in Settings. Keep in mind that scrobbled previews become part of the listening history future picks are based on.
+**Scrobbling.** The player can scrobble what you hear to ListenBrainz, Last.fm or both. The song shows as playing now when it starts, and a listen is recorded once you've heard half of it or 4 minutes, whichever comes first. Skipping ahead doesn't count toward that. Listens are sent by Crate's server, so your tokens never reach the browser. If a service is down, its listens are kept in `listens.pending.json` and retried every 10 minutes, with the time you actually heard them (Last.fm only takes scrobbles up to two weeks old). Each service has its own on/off switch under **Accounts** in Settings.
+
+- **ListenBrainz:** on as soon as your token is saved.
+- **Last.fm:** create an [API account](https://www.last.fm/api/account/create) (any name and description; leave the callback URL blank), and save its API key and shared secret in Settings. Then press **Connect Last.fm** and allow Crate on the Last.fm page that opens; it sends you back to Settings. Crate keeps the session Last.fm gives it in `settings.json`. Note that Last.fm is moving API access behind its paid Pro plan. Keep in mind that scrobbled previews become part of the listening history future picks are based on.
 
 Matching isn't perfect: now and then a song is the wrong version or the wrong band. Downloading from YouTube is also against YouTube's terms. These are short-lived previews for deciding what to buy.
 

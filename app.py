@@ -27,13 +27,14 @@ import subprocess
 import tempfile
 import threading
 import time
+import urllib.parse
 from datetime import datetime, timedelta
 from typing import Literal
 
 import httpx
 import uvicorn
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse, RedirectResponse
 from pydantic import BaseModel
 
 BASE = pathlib.Path(__file__).resolve().parent
@@ -46,7 +47,7 @@ SCHEDULE = BASE / "schedule.json"  # {"enabled": bool, "days": [0-6, Monday = 0]
 OLD_GOT = BASE / "got.json"  # earlier format: a list of keys marked as got
 PREVIEWS = BASE / "previews"  # previews/<run>/: downloaded preview songs and playlist.json
 SETTINGS = BASE / "settings.json"  # accounts and scrobbling, from the settings page (holds tokens and passwords)
-PENDING_LISTENS = BASE / "listens.pending.json"  # listens ListenBrainz didn't take yet; retried every 10 minutes
+PENDING_LISTENS = BASE / "listens.pending.json"  # {service: [listens it didn't take yet]}; retried every 10 minutes
 ARCHIVE.mkdir(parents=True, exist_ok=True)
 
 
@@ -212,10 +213,13 @@ def run_picks():
 # service -> field -> the environment variable its MCP server reads (None: only Crate uses it)
 ACCOUNT_FIELDS = {
     "listenbrainz": {"username": "LISTENBRAINZ_USERNAME", "token": "LISTENBRAINZ_TOKEN"},
-    "lastfm": {"username": None, "api_key": "LASTFM_API_KEY"},
+    # shared_secret and the session (from Connect Last.fm) are only for scrobbling
+    "lastfm": {"username": None, "api_key": "LASTFM_API_KEY", "shared_secret": None,
+               "session_key": None, "session_user": None},
     "navidrome": {"url": "NAVIDROME_URL", "username": "NAVIDROME_USERNAME", "password": "NAVIDROME_PASSWORD"},
 }
-SECRET_FIELDS = {"token", "api_key", "password"}  # never sent back to the page
+SECRET_FIELDS = {"token", "api_key", "password", "shared_secret", "session_key"}  # never sent back to the page
+SESSION_FIELDS = {"session_key", "session_user"}  # set only by Connect Last.fm, not by saving the form
 settings_lock = threading.Lock()
 
 
@@ -245,7 +249,8 @@ def read_settings():
             write_settings(saved)
     settings = {service: {field: str((saved.get(service) or {}).get(field) or "") for field in fields}
                 for service, fields in ACCOUNT_FIELDS.items()}
-    settings["scrobble"] = saved.get("scrobble", True) is not False
+    settings["scrobble"] = saved.get("scrobble", True) is not False  # to ListenBrainz
+    settings["scrobble_lastfm"] = saved.get("scrobble_lastfm", True) is not False
     return settings
 
 
@@ -288,7 +293,7 @@ def mcp_config():
 def public_settings():
     """Settings for the page: secrets only say whether they're set, plus their last 4 characters."""
     settings = read_settings()
-    out = {"scrobble": settings["scrobble"]}
+    out = {"scrobble": settings["scrobble"], "scrobble_lastfm": settings["scrobble_lastfm"]}
     for service, fields in ACCOUNT_FIELDS.items():
         out[service] = {}
         for field in fields:
@@ -306,20 +311,26 @@ class SettingsIn(BaseModel):
     lastfm: dict[str, str | None] = {}
     navidrome: dict[str, str | None] = {}
     scrobble: bool | None = None
+    scrobble_lastfm: bool | None = None
 
 
 def merged_settings(body: SettingsIn):
     settings = read_settings()
+    lastfm_app = (settings["lastfm"]["api_key"], settings["lastfm"]["shared_secret"])
     for service, fields in ACCOUNT_FIELDS.items():
         for field, value in (getattr(body, service) or {}).items():
-            if field in fields and value is not None:
+            if field in fields and field not in SESSION_FIELDS and value is not None:
                 settings[service][field] = value.strip()
+    if (settings["lastfm"]["api_key"], settings["lastfm"]["shared_secret"]) != lastfm_app:
+        settings["lastfm"]["session_key"] = settings["lastfm"]["session_user"] = ""  # belongs to the old key
     if settings["navidrome"]["url"]:
         settings["navidrome"]["url"] = settings["navidrome"]["url"].rstrip("/")
         if not re.match(r"https?://", settings["navidrome"]["url"]):
             raise HTTPException(400, "The Navidrome address needs to start with http:// or https://.")
     if body.scrobble is not None:
         settings["scrobble"] = body.scrobble
+    if body.scrobble_lastfm is not None:
+        settings["scrobble_lastfm"] = body.scrobble_lastfm
     return settings
 
 
@@ -336,6 +347,83 @@ def put_settings(body: SettingsIn):
 
 
 LB_API = "https://api.listenbrainz.org/1"
+LASTFM_API = "https://ws.audioscrobbler.com/2.0/"
+LASTFM_RETRY = {11, 16, 29}  # Last.fm errors worth trying again later: offline, temporarily down, rate limited
+
+
+class LastfmError(Exception):
+    def __init__(self, code, message):
+        super().__init__(f"Last.fm says: {message}")
+        self.code = code
+
+
+def lastfm_call(a, method, params, sign=False, post=False):
+    """Call the Last.fm API. Signed calls (sessions, scrobbles) need the shared secret."""
+    params = {**params, "method": method, "api_key": a["api_key"]}
+    if sign:
+        raw = "".join(f"{k}{params[k]}" for k in sorted(params)) + a["shared_secret"]
+        params["api_sig"] = hashlib.md5(raw.encode()).hexdigest()
+    params["format"] = "json"
+    r = (httpx.post(LASTFM_API, data=params, timeout=20) if post
+         else httpx.get(LASTFM_API, params=params, timeout=20))
+    try:
+        info = r.json()
+    except ValueError:
+        r.raise_for_status()
+        raise
+    if "error" in info:
+        raise LastfmError(info["error"], info.get("message", "error"))
+    r.raise_for_status()
+    return info
+
+
+ORIGIN = re.compile(r"https?://[A-Za-z0-9.\-]+(:\d+)?")
+
+
+@app.get("/lastfm/connect")
+def lastfm_connect(origin: str):
+    """Send you to Last.fm to let Crate scrobble; Last.fm sends you back to /lastfm/callback.
+    `origin` is the address you opened Crate at, so this works over a LAN address or Tailscale."""
+    a = read_settings()["lastfm"]
+    if not (a["api_key"] and a["shared_secret"]):
+        raise HTTPException(400, "Save a Last.fm API key and shared secret first.")
+    if not ORIGIN.fullmatch(origin):
+        raise HTTPException(400, "Bad origin.")
+    query = urllib.parse.urlencode({"api_key": a["api_key"], "cb": f"{origin}/lastfm/callback"})
+    return RedirectResponse(f"https://www.last.fm/api/auth/?{query}")
+
+
+@app.get("/lastfm/callback")
+def lastfm_callback(token: str = ""):
+    def back(**query):
+        return RedirectResponse(f"/settings?{urllib.parse.urlencode(query)}#acctHead")
+
+    if not token:
+        return back(lastfm_error="Last.fm didn't send a login token back. Try Connect Last.fm again.")
+    if not read_settings()["lastfm"]["shared_secret"]:
+        return back(lastfm_error="Save the Last.fm shared secret first, then press Connect Last.fm.")
+    with settings_lock:
+        settings = read_settings()
+        try:
+            session = lastfm_call(settings["lastfm"], "auth.getSession", {"token": token}, sign=True)["session"]
+        except LastfmError as exc:
+            return back(lastfm_error=str(exc))
+        except (httpx.HTTPError, ValueError, KeyError):
+            return back(lastfm_error="Couldn't reach Last.fm. Try again in a bit.")
+        settings["lastfm"].update(session_key=session["key"], session_user=session["name"])
+        if not settings["lastfm"]["username"]:
+            settings["lastfm"]["username"] = session["name"]
+        write_settings(settings)
+    return back(lastfm="connected")
+
+
+@app.post("/api/lastfm/disconnect")
+def lastfm_disconnect():
+    with settings_lock:
+        settings = read_settings()
+        settings["lastfm"]["session_key"] = settings["lastfm"]["session_user"] = ""
+        write_settings(settings)
+    return public_settings()
 
 
 def check_account(service, a):
@@ -362,13 +450,21 @@ def check_account(service, a):
         if service == "lastfm":
             if not a["api_key"]:
                 raise ValueError("Enter a Last.fm API key.")
-            params = {"api_key": a["api_key"], "format": "json"}
-            params.update({"method": "user.getinfo", "user": a["username"]} if a["username"]
-                          else {"method": "artist.getinfo", "artist": "Cher"})
-            info = http.get("https://ws.audioscrobbler.com/2.0/", params=params).json()
-            if "error" in info:
-                raise ValueError(f"Last.fm says: {info.get('message', 'error')}")
-            return f"Connected as {a['username']}." if a["username"] else "The API key works."
+            try:
+                if a["username"]:
+                    lastfm_call(a, "user.getInfo", {"user": a["username"]})
+                else:
+                    lastfm_call(a, "artist.getInfo", {"artist": "Cher"})
+                said = f"Found {a['username']}." if a["username"] else "The API key works."
+                if a["session_key"]:
+                    if not a["shared_secret"]:
+                        return said + " Add the shared secret to scrobble."
+                    user = lastfm_call(a, "user.getInfo", {"sk": a["session_key"]}, sign=True)["user"]["name"]
+                    return said + f" Scrobbling as {user}."
+            except LastfmError as exc:
+                raise ValueError(str(exc))
+            return said + (" Press Connect Last.fm to scrobble." if a["shared_secret"]
+                           else " Add the shared secret and connect to scrobble.")
         if service == "navidrome":
             if not (a["url"] and a["username"] and a["password"]):
                 raise ValueError("Enter the Navidrome address, username and password.")
@@ -409,7 +505,22 @@ class ScrobbleIn(BaseModel):
     listened_at: int | None = None  # when the song started (Unix seconds); for "single"
 
 
+pending_lock = threading.Lock()
+
+
+def scrobble_targets(settings):
+    """The services to scrobble to: switched on and fully set up."""
+    targets = []
+    if settings["scrobble"] and settings["listenbrainz"]["token"]:
+        targets.append("listenbrainz")
+    a = settings["lastfm"]
+    if settings["scrobble_lastfm"] and a["api_key"] and a["shared_secret"] and a["session_key"]:
+        targets.append("lastfm")
+    return targets
+
+
 def listen_payload(track, listened_at=None):
+    """A listen in ListenBrainz's format."""
     info = {"media_player": "Crate", "submission_client": "Crate", "music_service": "youtube.com",
             "origin_url": f"https://www.youtube.com/watch?v={track.get('video_id', '')}"}
     if track.get("seconds"):
@@ -423,6 +534,18 @@ def listen_payload(track, listened_at=None):
     return listen
 
 
+def lastfm_payload(track, listened_at=None):
+    """A scrobble in Last.fm's format."""
+    entry = {"artist": track["artist"], "track": track["title"], "album": track["album"]}
+    if track.get("seconds"):
+        entry["duration"] = int(track["seconds"])
+    if track.get("recording_mbid"):
+        entry["mbid"] = track["recording_mbid"]
+    if listened_at:
+        entry["timestamp"] = listened_at
+    return entry
+
+
 def submit_listens(token, listen_type, listens):
     r = httpx.post(f"{LB_API}/submit-listens", timeout=20,
                    headers={"Authorization": f"Token {token}"},
@@ -430,65 +553,104 @@ def submit_listens(token, listen_type, listens):
     r.raise_for_status()
 
 
+def submit_scrobbles(a, entries):
+    """Send up to 50 scrobbles to Last.fm in one call."""
+    params = {"sk": a["session_key"]}
+    for i, entry in enumerate(entries):
+        params.update({f"{key}[{i}]": value for key, value in entry.items()})
+    lastfm_call(a, "track.scrobble", params, sign=True, post=True)
+
+
+def send_now(service, settings, track, kind, listened_at):
+    """Send one listen to one service. Returns True if it went through. A finished listen that
+    couldn't be sent for a reason that may pass (the service is down) is queued for later."""
+    if service == "listenbrainz":
+        token = settings["listenbrainz"]["token"]
+        payload = listen_payload(track, listened_at if kind == "single" else None)
+        send = lambda: submit_listens(token, kind, [payload])
+    else:
+        a = settings["lastfm"]
+        payload = lastfm_payload(track, listened_at if kind == "single" else None)
+        send = ((lambda: lastfm_call(a, "track.updateNowPlaying", {**payload, "sk": a["session_key"]},
+                                     sign=True, post=True))
+                if kind == "playing_now" else (lambda: submit_scrobbles(a, [payload])))
+    try:
+        send()
+        return True
+    except (httpx.HTTPError, LastfmError) as exc:
+        retry = not isinstance(exc, LastfmError) or exc.code in LASTFM_RETRY
+        if kind == "single" and retry:  # "now playing" is only a live status; not worth keeping
+            with pending_lock:
+                pending = read_pending()
+                pending[service] = (pending.get(service, []) + [payload])[-500:]
+                write_pending(pending)
+        return False
+
+
 @app.post("/api/scrobble")
 def scrobble(body: ScrobbleIn):
     settings = read_settings()
-    token = settings["listenbrainz"]["token"]
-    if not (settings["scrobble"] and token):
-        return {"sent": False, "reason": "Scrobbling is off or there's no ListenBrainz token."}
+    targets = scrobble_targets(settings)
+    if not targets:
+        return {"sent": {}}
     find_pick(body.name)  # a real run name, not a path
     try:
         tracks = json.loads((preview_dir(body.name) / "playlist.json").read_text())["tracks"]
         track = next(t for t in tracks if t["file"] == body.file)
     except (FileNotFoundError, ValueError, KeyError, StopIteration):
         raise HTTPException(404, "No such preview song.")
-    if body.kind == "playing_now":
-        try:
-            submit_listens(token, "playing_now", [listen_payload(track)])
-        except httpx.HTTPError:
-            return {"sent": False}  # only a live status; not worth keeping
-        return {"sent": True}
-
     now = int(time.time())
-    listen = listen_payload(track, min(body.listened_at or now, now))
-    with settings_lock:
-        try:
-            submit_listens(token, "single", [listen])
-            sent = True
-        except httpx.HTTPError:  # keep it; it's sent with the next one or by the retry loop
-            write_pending((read_pending() + [listen])[-500:])
-            sent = False
-    if sent:
-        threading.Thread(target=send_pending, daemon=True).start()  # ListenBrainz is up: catch up
-    return {"sent": sent, "pending": len(read_pending())}
+    listened_at = min(body.listened_at or now, now)
+    sent = {service: send_now(service, settings, track, body.kind, listened_at) for service in targets}
+    if body.kind == "single" and any(sent.values()):
+        threading.Thread(target=send_pending, daemon=True).start()  # a service is up: catch up
+    return {"sent": sent}
 
 
 def read_pending():
     try:
-        return json.loads(PENDING_LISTENS.read_text())
+        pending = json.loads(PENDING_LISTENS.read_text())
     except (FileNotFoundError, ValueError):
-        return []
+        return {}
+    return {"listenbrainz": pending} if isinstance(pending, list) else pending  # older format: a list
 
 
-def write_pending(listens):
-    if listens:
-        PENDING_LISTENS.write_text(json.dumps(listens))
+def write_pending(pending):
+    pending = {service: listens for service, listens in pending.items() if listens}
+    if pending:
+        PENDING_LISTENS.write_text(json.dumps(pending))
     else:
         PENDING_LISTENS.unlink(missing_ok=True)
 
 
 def send_pending():
-    """Send listens ListenBrainz couldn't take earlier. Quietly keeps them if it's still down."""
-    with settings_lock:
+    """Send listens a service couldn't take earlier. Quietly keeps them if it's still down."""
+    with pending_lock:
         pending = read_pending()
-        token = read_settings()["listenbrainz"]["token"]
-        if not (pending and token):
+        if not pending:
             return
-        try:
-            submit_listens(token, "import", pending)
-        except httpx.HTTPError:
-            return
-        write_pending([])
+        settings = read_settings()
+        targets = scrobble_targets(settings)
+        if "listenbrainz" in targets and pending.get("listenbrainz"):
+            try:
+                submit_listens(settings["listenbrainz"]["token"], "import", pending["listenbrainz"])
+                pending["listenbrainz"] = []
+            except httpx.HTTPError:
+                pass
+        if "lastfm" in targets and pending.get("lastfm"):
+            cutoff = time.time() - 14 * 86400  # Last.fm turns down scrobbles older than two weeks
+            left = [e for e in pending["lastfm"] if e.get("timestamp", 0) > cutoff]
+            while left:
+                try:
+                    submit_scrobbles(settings["lastfm"], left[:50])
+                except LastfmError as exc:
+                    if exc.code in LASTFM_RETRY:
+                        break
+                except httpx.HTTPError:
+                    break
+                left = left[50:]  # sent, or turned down for good
+            pending["lastfm"] = left
+        write_pending(pending)
 
 
 def retry_pending_listens():
@@ -547,6 +709,18 @@ def index():
 @app.get("/settings")
 def settings():
     return FileResponse(BASE / "settings.html")
+
+
+ICONS = {"icon.svg": "image/svg+xml", "apple-touch-icon.png": "image/png"}  # the PNG is icon.svg at 180×180
+
+
+@app.get("/apple-touch-icon.png")  # iOS also looks here on its own when adding to the home screen
+@app.get("/icons/{file}")
+def icon(file: str = "apple-touch-icon.png"):
+    if file not in ICONS:
+        raise HTTPException(404, "No such icon.")
+    return FileResponse(BASE / "icons" / file, media_type=ICONS[file],
+                        headers={"Cache-Control": "public, max-age=86400"})
 
 
 @app.get("/api/state")

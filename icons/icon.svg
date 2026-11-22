@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Crate's icon: a record in a crate, in the page's paper, ink and red -->
+  <rect width="512" height="512" fill="#e4e3de"/>
+  <g transform="translate(256 222)">
+    <circle r="168" fill="#141414"/>
+    <circle r="146" fill="none" stroke="#2b2b28" stroke-width="3"/>
+    <circle r="124" fill="none" stroke="#2b2b28" stroke-width="3"/>
+    <circle r="102" fill="none" stroke="#2b2b28" stroke-width="3"/>
+    <path d="M -120 -84 A 146 146 0 0 1 -40 -140" fill="none" stroke="#4a4a45" stroke-width="6" stroke-linecap="round"/>
+    <circle r="58" fill="#e4e3de"/>
+    <circle r="9" fill="#141414"/>
+  </g>
+  <!-- the crate: three planks with a handle cut in the top one -->
+  <rect x="70" y="282" width="372" height="170" rx="6" fill="#8e1b1b"/>
+  <rect x="70" y="282" width="372" height="12" rx="6" fill="#a62626"/>
+  <rect x="70" y="337" width="372" height="8" fill="#e4e3de"/>
+  <rect x="70" y="395" width="372" height="8" fill="#e4e3de"/>
+  <rect x="206" y="301" width="100" height="22" rx="11" fill="#5e1010"/>
+</svg>
