@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crate settings</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text x='50' y='50' font-size='90' text-anchor='middle' dominant-baseline='central'>💿</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    color-scheme: light;
+    --paper: #e4e3de; --ink: #141414; --muted: #5d5c57; --rule: #bfbdb5;
+    --field: #efeeea; --accent: #8e1b1b; --accent-ink: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --paper: #1b1b19; --ink: #e8e6e0; --muted: #9b998f; --rule: #3b3a35;
+      --field: #242421; --accent: #d2493a; --accent-ink: #140a08;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: Archivo, "Helvetica Neue", Arial, sans-serif; line-height: 1.5;
+  }
+  .wrap { max-width: 60rem; margin: 0 auto; padding: 2rem clamp(1rem, 3vw, 3rem) 4rem; }
+  header {
+    display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
+    gap: 1rem; border-bottom: 3px solid var(--ink); padding-bottom: 1rem;
+  }
+  h1 { margin: 0; font-size: clamp(3rem, 10vw, 5.5rem); line-height: .8; font-weight: 900; font-stretch: 62%; }
+  h2 { font-size: 1.5rem; font-weight: 800; font-stretch: 75%; margin: 0 0 .5rem; }
+  section { margin-top: 2.5rem; }
+  .hint { color: var(--muted); font-size: .9rem; margin: 0 0 .8rem; max-width: 70ch; }
+  a { color: var(--accent); }
+  button { font: inherit; cursor: pointer; }
+  :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .ghost {
+    background: none; border: 2px solid var(--ink); color: var(--ink);
+    padding: .45rem .9rem; font-weight: 700; border-radius: 2px;
+  }
+  .row { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; margin-top: .6rem; }
+  .msg { color: var(--muted); font-size: .9rem; min-height: 1.3em; }
+  .msg.err { color: var(--accent); }
+
+  textarea {
+    width: 100%; min-height: 20rem; resize: vertical; font: inherit; font-size: .9rem; line-height: 1.45;
+    padding: .75rem; background: var(--field); color: var(--ink); border: 1px solid var(--rule); border-radius: 2px;
+  }
+
+  #schedNext { margin: 0 0 .6rem; color: var(--muted); font-size: .9rem; }
+  .check { display: flex; gap: .5rem; align-items: center; font-weight: 700; }
+  .check input { accent-color: var(--accent); width: 1rem; height: 1rem; margin: 0; }
+  .days { display: flex; flex-wrap: wrap; gap: .3rem; border: 0; padding: 0; margin: .8rem 0; }
+  .days legend { padding: 0; margin-bottom: .35rem; color: var(--muted); font-size: .9rem; }
+  .days label { position: relative; }
+  .days input { position: absolute; opacity: 0; inset: 0; }
+  .days span {
+    display: inline-flex; align-items: center; justify-content: center; min-width: 2.6rem; height: 1.9rem;
+    border: 1px solid var(--rule); border-radius: 2px; font-size: .8rem; font-weight: 700; color: var(--muted); cursor: pointer;
+  }
+  .days input:checked + span { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .days input:focus-visible + span { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .days input:disabled + span { opacity: .45; cursor: default; }
+  .time-row { display: flex; align-items: center; gap: .6rem; color: var(--muted); font-size: .9rem; }
+  #schedTime {
+    font: inherit; padding: .35rem .5rem; background: var(--field); color: var(--ink);
+    border: 1px solid var(--rule); border-radius: 2px;
+  }
+
+  .account { border: 1px solid var(--rule); border-radius: 2px; padding: 1rem 1.1rem 1.1rem; margin: 0 0 1rem; }
+  .account legend { font-weight: 800; font-stretch: 75%; font-size: 1.15rem; padding: 0 .35rem; margin-left: -.35rem; }
+  .account legend small { font-weight: 400; font-stretch: 100%; font-size: .85rem; color: var(--muted); margin-left: .3rem; }
+  .account .hint { margin-bottom: .6rem; }
+  .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: .7rem 1rem; }
+  .field { display: flex; flex-direction: column; gap: .2rem; font-size: .85rem; color: var(--muted); }
+  .field .with-btn { display: flex; gap: .4rem; }
+  .field input {
+    flex: 1; min-width: 0; font: inherit; font-size: .95rem; color: var(--ink); padding: .4rem .55rem;
+    background: var(--field); border: 1px solid var(--rule); border-radius: 2px;
+  }
+  .field input::placeholder { color: var(--muted); opacity: .8; }
+  .linkish {
+    background: none; border: 0; padding: 0 .2rem; color: var(--accent); font-size: .85rem;
+    text-decoration: underline; text-underline-offset: 2px;
+  }
+  .account .row { margin-top: .8rem; }
+  .account .check { margin-top: .9rem; font-weight: 600; }
+  .msg.ok { color: var(--ink); }
+  .msg.ok::before { content: "✓ "; color: #2e7d32; font-weight: 800; }
+  @media (prefers-color-scheme: dark) { .msg.ok::before { color: #5cb860; } }
+  #accountsSave { margin-top: .2rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Settings</h1>
+    <a href="/">← Back to picks</a>
+  </header>
+
+  <section aria-labelledby="promptHead">
+    <h2 id="promptHead">Prompt</h2>
+    <p class="hint">What the model is asked on every run. Crate adds your recent picks and your Got, ♥ and Pass marks after it.</p>
+    <textarea id="prompt" spellcheck="false" aria-labelledby="promptHead"></textarea>
+    <div class="row">
+      <button class="ghost" id="saveBtn">Save prompt</button>
+      <button class="ghost" id="revertBtn">Undo changes</button>
+      <span class="msg" id="promptMsg" role="status"></span>
+    </div>
+  </section>
+
+  <section aria-labelledby="schedHead">
+    <h2 id="schedHead">Schedule</h2>
+    <p id="schedNext"></p>
+    <form id="schedForm">
+      <label class="check"><input type="checkbox" id="schedOn"> Dig up new picks automatically</label>
+      <fieldset class="days" id="schedDays">
+        <legend>On</legend>
+      </fieldset>
+      <label class="time-row">At <input type="time" id="schedTime" required> (server time)</label>
+      <div class="row">
+        <button class="ghost" type="submit">Save schedule</button>
+        <span class="msg" id="schedMsg" role="status"></span>
+      </div>
+    </form>
+  </section>
+
+  <section aria-labelledby="acctHead">
+    <h2 id="acctHead">Accounts</h2>
+    <p class="hint">Saved on this server in <code>settings.json</code> and handed to the tools on each run.
+      Tokens and passwords are never shown again after saving; leave one blank to keep it.</p>
+    <form id="acctForm" autocomplete="off">
+      <fieldset class="account" data-service="listenbrainz">
+        <legend>ListenBrainz</legend>
+        <p class="hint">Your listening history. The token is on your
+          <a href="https://listenbrainz.org/settings/" target="_blank" rel="noopener">ListenBrainz settings page</a>;
+          Crate needs it to scrobble, and it helps pick preview songs.</p>
+        <div class="fields">
+          <label class="field">Username <input name="username" spellcheck="false" autocapitalize="off"></label>
+          <label class="field">User token <span class="with-btn"><input name="token" type="password" autocomplete="new-password" spellcheck="false"></span></label>
+        </div>
+        <label class="check"><input type="checkbox" id="scrobbleOn"> Scrobble preview songs to ListenBrainz</label>
+        <div class="row"><button class="ghost" type="button" data-test>Test</button><span class="msg" role="status"></span></div>
+      </fieldset>
+
+      <fieldset class="account" data-service="lastfm">
+        <legend>Last.fm <small>optional</small></legend>
+        <p class="hint">Extra listening history. Leave the API key blank to skip Last.fm.</p>
+        <div class="fields">
+          <label class="field">Username <input name="username" spellcheck="false" autocapitalize="off"></label>
+          <label class="field">API key <span class="with-btn"><input name="api_key" type="password" autocomplete="new-password" spellcheck="false"></span></label>
+        </div>
+        <div class="row"><button class="ghost" type="button" data-test>Test</button><span class="msg" role="status"></span></div>
+      </fieldset>
+
+      <fieldset class="account" data-service="navidrome">
+        <legend>Navidrome <small>optional</small></legend>
+        <p class="hint">Your library, so picks skip albums you already have. Leave the address blank to skip it.</p>
+        <div class="fields">
+          <label class="field">Address <input name="url" type="url" placeholder="http://192.168.1.10:4533" spellcheck="false"></label>
+          <label class="field">Username <input name="username" spellcheck="false" autocapitalize="off"></label>
+          <label class="field">Password <span class="with-btn"><input name="password" type="password" autocomplete="new-password" spellcheck="false"></span></label>
+        </div>
+        <div class="row"><button class="ghost" type="button" data-test>Test</button><span class="msg" role="status"></span></div>
+      </fieldset>
+
+      <div class="row" id="accountsSave">
+        <button class="ghost" type="submit">Save accounts</button>
+        <span class="msg" id="acctMsg" role="status"></span>
+      </div>
+    </form>
+  </section>
+</div>
+
+<script>
+  const $ = (s) => document.querySelector(s);
+
+  async function api(path, opts = {}) {
+    const r = await fetch(path, opts);
+    if (!r.ok) {
+      let msg = await r.text();
+      try { msg = JSON.parse(msg).detail || msg; } catch {}
+      throw new Error(msg || r.statusText);
+    }
+    return r.json();
+  }
+
+  function say(el, msg, isError = false) {
+    el.textContent = msg;
+    el.classList.toggle("err", isError);
+  }
+
+  // --- Prompt ---
+  let savedPrompt = "";
+
+  async function loadPrompt() {
+    savedPrompt = (await api("/api/prompt")).text;
+    $("#prompt").value = savedPrompt;
+  }
+
+  $("#saveBtn").onclick = async () => {
+    const text = $("#prompt").value;
+    if (!text.trim()) { say($("#promptMsg"), "The prompt can’t be empty.", true); return; }
+    try {
+      await api("/api/prompt", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+      savedPrompt = text;
+      say($("#promptMsg"), "Saved. The next run uses it.");
+    } catch (e) { say($("#promptMsg"), e.message, true); }
+  };
+
+  $("#revertBtn").onclick = () => {
+    $("#prompt").value = savedPrompt;
+    say($("#promptMsg"), "Back to the saved prompt.");
+  };
+
+  $("#prompt").addEventListener("input", () => say($("#promptMsg"), $("#prompt").value === savedPrompt ? "" : "Unsaved changes"));
+  window.addEventListener("beforeunload", (e) => { if ($("#prompt").value !== savedPrompt) e.preventDefault(); });
+
+  // --- Schedule: automatic runs, run by the server on its own clock ---
+  const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+  $("#schedDays").append(...DAYS.map((name, i) => {
+    const label = document.createElement("label");
+    label.innerHTML = `<input type="checkbox" value="${i}" aria-label="${name}"><span aria-hidden="true">${name.slice(0, 3)}</span>`;
+    return label;
+  }));
+  const dayBoxes = () => [...document.querySelectorAll("#schedDays input")];
+  const syncDayBoxes = () => dayBoxes().forEach((b) => (b.disabled = !$("#schedOn").checked));
+  $("#schedOn").onchange = syncDayBoxes;
+
+  function showNext(s) {
+    $("#schedNext").textContent = !s.enabled ? "Off. Picks are only dug up when you press the button."
+      : s.next ? "Next run: " + new Date(s.next).toLocaleString([], { weekday: "long", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+      : "";
+  }
+
+  async function loadSchedule() {
+    const s = await api("/api/schedule");
+    $("#schedOn").checked = s.enabled;
+    dayBoxes().forEach((b) => (b.checked = s.days.includes(Number(b.value))));
+    $("#schedTime").value = s.time;
+    syncDayBoxes();
+    showNext(s);
+  }
+
+  $("#schedForm").onsubmit = async (e) => {
+    e.preventDefault();
+    const body = {
+      enabled: $("#schedOn").checked,
+      days: dayBoxes().filter((b) => b.checked).map((b) => Number(b.value)),
+      time: $("#schedTime").value,
+    };
+    if (body.enabled && !body.days.length) { say($("#schedMsg"), "Pick at least one day.", true); return; }
+    if (!body.time) { say($("#schedMsg"), "Pick a time.", true); return; }
+    try {
+      showNext(await api("/api/schedule", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }));
+      say($("#schedMsg"), "Saved.");
+    } catch (err) { say($("#schedMsg"), err.message, true); }
+  };
+
+  // --- Accounts ---
+  const SECRETS = ["token", "api_key", "password"];
+  const accountBoxes = () => [...document.querySelectorAll(".account")];
+  let acctDirty = false;
+
+  function showAccounts(s) {
+    $("#scrobbleOn").checked = s.scrobble;
+    for (const box of accountBoxes()) {
+      const saved = s[box.dataset.service];
+      for (const input of box.querySelectorAll("input[name]")) {
+        const value = saved[input.name];
+        if (!SECRETS.includes(input.name)) { input.value = value; continue; }
+        input.value = "";
+        delete input.dataset.clear;
+        input.placeholder = !value.set ? "Not set" : value.hint ? `Saved, ends in ${value.hint}` : "Saved";
+        input.parentElement.querySelector(".linkish")?.remove();
+        if (value.set) {  // a way to remove it, e.g. to stop using Last.fm
+          const rm = document.createElement("button");
+          rm.type = "button"; rm.className = "linkish"; rm.textContent = "Remove";
+          rm.onclick = () => {
+            input.value = ""; input.dataset.clear = "1"; input.placeholder = "Removed when you save";
+            rm.remove(); acctDirty = true; say($("#acctMsg"), "Unsaved changes");
+          };
+          input.after(rm);
+        }
+      }
+    }
+    acctDirty = false;
+  }
+
+  function accountValues(only = null) {
+    const body = { scrobble: $("#scrobbleOn").checked };
+    for (const box of accountBoxes()) {
+      if (only && box.dataset.service !== only) continue;
+      const fields = {};
+      for (const input of box.querySelectorAll("input[name]")) {
+        if (!SECRETS.includes(input.name)) fields[input.name] = input.value.trim();
+        else if (input.value.trim()) fields[input.name] = input.value.trim();
+        else if (input.dataset.clear) fields[input.name] = "";
+        // a blank secret is left out, so the saved one is kept
+      }
+      body[box.dataset.service] = fields;
+    }
+    return body;
+  }
+
+  for (const box of accountBoxes()) {
+    const btn = box.querySelector("[data-test]"), msg = box.querySelector(".msg");
+    btn.onclick = async () => {
+      btn.disabled = true;
+      msg.classList.remove("ok");
+      say(msg, "Checking…");
+      try {
+        const r = await api(`/api/settings/test/${box.dataset.service}`, {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(accountValues(box.dataset.service)),
+        });
+        say(msg, r.message, !r.ok);
+        msg.classList.toggle("ok", r.ok);
+      } catch (e) { say(msg, e.message, true); }
+      btn.disabled = false;
+    };
+  }
+
+  $("#acctForm").addEventListener("input", () => { acctDirty = true; say($("#acctMsg"), "Unsaved changes"); });
+  $("#acctForm").onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      showAccounts(await api("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(accountValues()) }));
+      say($("#acctMsg"), "Saved. The next run uses these.");
+    } catch (err) { say($("#acctMsg"), err.message, true); }
+  };
+  window.addEventListener("beforeunload", (e) => { if (acctDirty) e.preventDefault(); });
+
+  loadPrompt().catch((e) => say($("#promptMsg"), `Couldn’t load the prompt: ${e.message}`, true));
+  loadSchedule().catch((e) => say($("#schedMsg"), `Couldn’t load the schedule: ${e.message}`, true));
+  api("/api/settings").then(showAccounts).catch((e) => say($("#acctMsg"), `Couldn’t load the accounts: ${e.message}`, true));
+</script>
+</body>
+</html>

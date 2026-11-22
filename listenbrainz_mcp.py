@@ -135,7 +135,8 @@ def safe(fn):
         except ToolError as exc:
             return {"error": str(exc)}
         except httpx.HTTPError as exc:
-            return {"error": f"Request failed: {exc}"}
+            detail = str(exc) or type(exc).__name__  # timeouts have no message of their own
+            return {"error": f"Request failed: {detail}. ListenBrainz may be down or slow; try again later."}
 
     return wrapper
 

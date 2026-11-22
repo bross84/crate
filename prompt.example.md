@@ -1,4 +1,4 @@
-Use the listenbrainz and navidrome MCP tools. My ListenBrainz username is YOUR_LISTENBRAINZ_USERNAME.
+Use the listenbrainz and navidrome MCP tools.
 
 Suggest 10 albums I might like, based on my ListenBrainz listening history and on the albums
 I've loved, got and passed on (listed below). Any genre, any era, famous or obscure.

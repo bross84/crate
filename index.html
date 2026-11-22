@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#e4e3de" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1b1b19" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-title" content="Crate">
 <title>Crate</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text x='50' y='50' font-size='90' text-anchor='middle' dominant-baseline='central'>💿</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -15,12 +18,16 @@
     color-scheme: light;
     --paper: #e4e3de; --ink: #141414; --muted: #5d5c57; --rule: #bfbdb5;
     --field: #efeeea; --accent: #8e1b1b; --accent-ink: #ffffff;
+    --got: #2e7d32; --got-ink: #ffffff;
+    --now: #2f7fd8;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       color-scheme: dark;
       --paper: #1b1b19; --ink: #e8e6e0; --muted: #9b998f; --rule: #3b3a35;
       --field: #242421; --accent: #d2493a; --accent-ink: #140a08;
+      --got: #5cb860; --got-ink: #0c1a0d;
+      --now: #5aa9f5;
     }
   }
   * { box-sizing: border-box; }
@@ -38,7 +45,7 @@
     margin: 0; font-size: clamp(4.5rem, 15vw, 9.5rem); line-height: .78;
     font-weight: 900; font-stretch: 62%; letter-spacing: -.01em;
   }
-  .tag { margin: .6rem 0 0; color: var(--muted); }
+  header .tag { margin: .6rem 0 0; color: var(--muted); }
   .run { display: flex; flex-direction: column; align-items: flex-end; gap: .4rem; }
 
   button { font: inherit; cursor: pointer; }
@@ -75,11 +82,12 @@
   }
   .md td.mark button + button { margin-left: .3rem; }
   .md td.mark button:hover { color: var(--ink); border-color: var(--ink); }
-  .md td.mark button[data-mark="got"][aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .md td.mark button[data-mark="got"][aria-pressed="true"] { background: var(--got); border-color: var(--got); color: var(--got-ink); }
   .md td.mark button[data-mark="pass"][aria-pressed="true"] { background: var(--muted); border-color: var(--muted); color: var(--paper); }
-  .md tr.is-got td:not(.mark) { text-decoration: line-through; color: var(--muted); }
-  .md tr.is-got td:not(.mark) a { color: var(--muted); }
-  .md tr.is-pass td:not(.mark) { opacity: .4; }
+  .md tr.is-got td { background: color-mix(in srgb, var(--got) 16%, transparent); }
+  .md tr.is-got td.mark { box-shadow: inset 4px 0 0 var(--got); }
+  .md tr.is-pass td { background: color-mix(in srgb, var(--muted) 18%, transparent); }
+  .md tr.is-pass td.mark { box-shadow: inset 4px 0 0 var(--muted); }
   .md td.mark button[data-mark="love"] { width: 1.6rem; padding: 0; font-size: .95rem; }
   .md td.mark button[data-mark="love"][aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
   .md tr.is-love td { background: color-mix(in srgb, var(--accent) 10%, transparent); }
@@ -87,17 +95,10 @@
   .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .md p, .md li { max-width: 70ch; }
 
-  .prompt { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--rule); }
-  textarea {
-    width: 100%; min-height: 16rem; resize: vertical; font: inherit; font-size: .9rem; line-height: 1.45;
-    padding: .75rem; background: var(--field); color: var(--ink); border: 1px solid var(--rule); border-radius: 2px;
-  }
-  .row { display: flex; gap: .75rem; align-items: center; margin-top: .6rem; }
   .ghost {
     background: none; border: 2px solid var(--ink); color: var(--ink);
     padding: .45rem .9rem; font-weight: 700; border-radius: 2px;
   }
-  #saveMsg { color: var(--muted); font-size: .9rem; }
   #history button {
     width: 100%; text-align: left; background: none; border: 0; color: var(--ink);
     border-bottom: 1px solid var(--rule); padding: .55rem 0;
@@ -131,32 +132,182 @@
   }
   #archived button[aria-current="true"] { font-weight: 800; color: var(--accent); }
 
-  .schedule { margin-top: 2rem; }
-  #schedSummary { margin: 0 0 .3rem; }
-  #schedNext { margin: 0 0 .4rem; color: var(--muted); font-size: .9rem; }
-  #schedForm { margin-top: .6rem; }
-  #schedForm .check { display: flex; gap: .5rem; align-items: center; font-weight: 700; }
-  #schedForm input[type="checkbox"] { accent-color: var(--accent); width: 1rem; height: 1rem; margin: 0; }
-  .days { display: flex; flex-wrap: wrap; gap: .3rem; border: 0; padding: 0; margin: .8rem 0; }
-  .days legend { padding: 0; margin-bottom: .35rem; color: var(--muted); font-size: .9rem; }
-  .days label { position: relative; }
-  .days input { position: absolute; opacity: 0; inset: 0; }
-  .days span {
-    display: inline-flex; align-items: center; justify-content: center; min-width: 2.3rem; height: 1.8rem;
-    border: 1px solid var(--rule); border-radius: 2px; font-size: .8rem; font-weight: 700; color: var(--muted); cursor: pointer;
+  #nextRun { margin: 0; color: var(--muted); font-size: .9rem; text-align: right; }
+  #nextRun a { color: var(--muted); }
+  #nextRun a:hover { color: var(--ink); }
+  @media (max-width: 52rem) { #nextRun { text-align: left; } }
+  /* Preview playlist: a bar above the list, Play links in rows, and a player pinned to the bottom. */
+  .md td.listen .link { font-size: inherit; color: var(--accent); }
+  /* The album being previewed: light blue, over any Got/Pass/♥ tint, until the player moves on. */
+  .md tr.is-playing td { background: color-mix(in srgb, var(--now) 20%, transparent); }
+  .md tr.is-playing td.mark { box-shadow: inset 4px 0 0 var(--now); }
+
+  .playlist {
+    margin-bottom: 2rem; padding: 1rem 1rem .8rem; background: var(--field);
+    border: 1px solid var(--rule); border-top: 3px solid var(--ink); border-radius: 2px;
   }
-  .days input:checked + span { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
-  .days input:focus-visible + span { outline: 3px solid var(--accent); outline-offset: 2px; }
-  .days input:disabled + span { opacity: .45; cursor: default; }
-  .time-row { display: flex; align-items: center; gap: .6rem; color: var(--muted); font-size: .9rem; }
-  #schedTime {
-    font: inherit; padding: .35rem .5rem; background: var(--field); color: var(--ink);
-    border: 1px solid var(--rule); border-radius: 2px;
+  .pl-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+  .pl-head h2 { margin: 0; }
+  #plCount { color: var(--muted); font-size: .85rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #previewMsg { color: var(--muted); font-size: .85rem; margin: .2rem 0 .7rem; }
+  #previewMsg:empty { display: none; }
+  .pl-progress { height: 3px; background: var(--rule); margin: 0 0 .8rem; overflow: hidden; }
+  .pl-progress span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .4s; }
+  #playAllBtn {
+    width: 100%; background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 2px;
+    padding: .6rem 1rem; font-weight: 800; font-stretch: 80%; font-size: 1rem; letter-spacing: .01em;
   }
-  #schedMsg { color: var(--accent); font-size: .9rem; min-height: 1.3em; margin: .4rem 0 0; }
+  #playAllBtn:hover { filter: brightness(1.08); }
+  #songs {
+    list-style: none; margin: .8rem -.4rem 0; padding: 0 0 .3rem; font-size: .9rem;
+    max-height: 15rem; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
+    border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); padding-top: .5rem;
+  }
+  #songs > li + li { margin-top: .7rem; }
+  #songs > li[data-key] { display: grid; grid-template-columns: 3.4rem minmax(0, 1fr); gap: .15rem .45rem; padding-left: .4rem; }
+  .cover {
+    width: 3.4rem; height: 3.4rem; object-fit: cover; border-radius: 2px; margin-top: .1rem;
+    background: var(--rule); box-shadow: 0 0 0 1px color-mix(in srgb, var(--ink) 10%, transparent);
+  }
+  .album-body { min-width: 0; }
+  .album-head { display: flex; align-items: baseline; gap: .5rem; padding: 0 .4rem .15rem; }
+  .album-head .names { flex: 1; min-width: 0; line-height: 1.25; }
+  .album-head .al { display: block; font-weight: 800; font-stretch: 85%; }
+  .album-head .ar { display: block; color: var(--muted); font-size: .8rem; }
+  .album-head .tag {
+    font-size: .7rem; font-weight: 800; text-transform: uppercase; letter-spacing: .04em;
+    padding: .05rem .35rem; border-radius: 2px; color: var(--paper); background: var(--muted);
+  }
+  .album-head .tag[data-mark="got"] { background: var(--got); color: var(--got-ink); }
+  .album-head .tag[data-mark="love"] { background: var(--accent); color: var(--accent-ink); }
+  .tracks { list-style: none; margin: 0; padding: 0; }
+  .tracks button {
+    display: flex; align-items: center; gap: .55rem; width: 100%; text-align: left;
+    background: none; border: 0; border-radius: 2px; padding: .3rem .4rem; color: var(--ink);
+  }
+  .tracks button:hover { background: color-mix(in srgb, var(--ink) 7%, transparent); }
+  .tracks .n { width: 1.3rem; flex: none; text-align: right; color: var(--muted); font-size: .8rem; font-variant-numeric: tabular-nums; }
+  .tracks .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tracks .eq { display: none; width: 1.3rem; flex: none; height: .8rem; align-items: flex-end; justify-content: flex-end; gap: 2px; }
+  .tracks .eq i { width: 3px; height: 100%; background: var(--now); }
+  .tracks li.is-current .n { display: none; }
+  .tracks li.is-current .eq { display: flex; }
+  .tracks li.is-current button { background: color-mix(in srgb, var(--now) 20%, transparent); }
+  .tracks li.is-current .t { font-weight: 700; }
+  #songs > li.is-marked .album-head .names, #songs > li.is-marked .tracks, #songs > li.is-marked .cover { opacity: .5; }
+  #songs li.note { color: var(--muted); font-size: .8rem; padding: 0 .4rem; }
+  #songs li.note + li.note { margin-top: .2rem; }
+  .pl-foot { margin-top: .8rem; padding-top: .6rem; border-top: 1px solid var(--rule); }
+  .pl-foot .link { font-size: .85rem; }
+  @media (prefers-reduced-motion: no-preference) {
+    body:not(.is-paused) .tracks li.is-current .eq i { animation: eq .9s ease-in-out infinite; }
+    .tracks .eq i:nth-child(2) { animation-delay: -.3s !important; }
+    .tracks .eq i:nth-child(3) { animation-delay: -.6s !important; }
+    @keyframes eq { 0%, 100% { height: 30%; } 50% { height: 100%; } }
+  }
+  body.has-player { padding-bottom: 6.5rem; }
+  #player {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+    display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem;
+    padding: .7rem clamp(1rem, 3vw, 3rem); background: var(--field); border-top: 3px solid var(--ink);
+  }
+  #player[hidden] { display: none; }
+  #player .np { flex: 1 1 14rem; min-width: 0; }
+  #npArt { width: 2.8rem; height: 2.8rem; object-fit: cover; border-radius: 2px; flex: none; background: var(--rule); }
+  #npTitle { display: block; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #npSub { display: block; color: var(--muted); font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #player audio { flex: 2 1 18rem; min-width: 0; height: 2.4rem; }
+  #player .ctl {
+    background: none; border: 1px solid var(--rule); color: var(--ink); border-radius: 2px;
+    min-width: 2.4rem; height: 2.4rem; font-size: 1rem; font-weight: 700;
+  }
+  #player .ctl:hover { border-color: var(--ink); }
   @media (prefers-reduced-motion: no-preference) {
     #runBtn.busy { animation: pulse 1.6s ease-in-out infinite; }
     @keyframes pulse { 50% { opacity: .75; } }
+  }
+
+  /* ---------- Phones and narrow tablets ---------- */
+  @media (max-width: 52rem) {
+    /* One column: Playlist first, then the picks, then search and the lists of runs. */
+    .grid { display: flex; flex-direction: column; gap: 1.75rem; }
+    aside { display: contents; }
+    #playlistBox { order: -1; margin-bottom: 0; }
+    main { order: 0; }
+    .search { order: 1; margin-bottom: 0; }
+    aside > section:not(.search):not(.playlist), #archivedBox { order: 2; }
+    #songs { max-height: 50vh; }
+  }
+
+  @media (max-width: 40rem) {
+    .wrap { padding: calc(1rem + env(safe-area-inset-top)) 1rem 3rem; }
+    header { align-items: center; gap: .75rem; padding-bottom: .75rem; }
+    h1 { font-size: 3.6rem; }
+    header .tag { display: none; }
+    .run { align-items: stretch; flex: 1 1 100%; }
+    #runBtn { padding: .7rem 1rem; font-size: 1rem; }
+    #status, #nextRun { text-align: left; }
+    #status:empty { display: none; }
+    .run { gap: .5rem; }
+    .grid { margin-top: 1.25rem; }
+    h2 { font-size: 1.3rem; }
+
+    /* Picks as cards */
+    .md table, .md tbody, .md tr, .md td { display: block; }
+    .md table { font-size: .95rem; }
+    .md thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+    .md tr {
+      display: grid; grid-template-columns: 1fr auto; column-gap: .75rem;
+      padding: .85rem .9rem .9rem; margin-bottom: .75rem;
+      background: var(--field); border: 1px solid var(--rule); border-left: 4px solid var(--rule); border-radius: 3px;
+    }
+    .md tr td { grid-column: 1 / -1; padding: 0; border: 0; background: none !important; box-shadow: none !important; }
+    .md td.col-album { grid-row: 1; grid-column: 1; font-weight: 800; font-size: 1.08rem; font-stretch: 90%; line-height: 1.25; }
+    .md td.col-year { grid-row: 1; grid-column: 2; color: var(--muted); font-size: .85rem; align-self: baseline; }
+    .md td.col-artist, .md td.mark + td.col-artist { grid-row: 2; font-weight: 600; margin-top: .1rem; }
+    .md td.col-why {
+      grid-row: 3; margin-top: .5rem; color: var(--muted); font-size: .88rem; line-height: 1.45;
+      display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; cursor: pointer;
+    }
+    .md td.col-why.open { -webkit-line-clamp: unset; display: block; }
+    .md td.listen { grid-row: 4; margin-top: .6rem; white-space: normal; font-size: .9rem; }
+    .md td.mark { grid-row: 5; width: auto; display: flex; gap: .45rem; margin-top: .75rem; padding: 0; }
+    .md td.mark button { flex: 1; height: 2.6rem; font-size: .95rem; }
+    .md td.mark button + button { margin-left: 0; }
+    .md td.mark button[data-mark="love"] { flex: 0 0 3rem; width: auto; font-size: 1.1rem; }
+    .md td.from { grid-row: 6; margin-top: .5rem; font-size: .85rem; }
+
+    /* Marks and "now playing" tint the whole card */
+    .md tr.is-got { background: color-mix(in srgb, var(--got) 14%, var(--field)); border-color: color-mix(in srgb, var(--got) 45%, var(--rule)); border-left-color: var(--got); }
+    .md tr.is-pass { background: color-mix(in srgb, var(--muted) 16%, var(--field)); border-left-color: var(--muted); }
+    .md tr.is-love { background: color-mix(in srgb, var(--accent) 10%, var(--field)); border-left-color: var(--accent); }
+    .md tr.is-playing { background: color-mix(in srgb, var(--now) 18%, var(--field)); border-color: color-mix(in srgb, var(--now) 50%, var(--rule)); border-left-color: var(--now); }
+
+    .meta-row { gap: .25rem .9rem; }
+
+    /* Playlist card: room to breathe, bigger touch targets */
+    .playlist { padding: .9rem .9rem .7rem; }
+    #playAllBtn { padding: .8rem 1rem; font-size: 1.05rem; }
+    .tracks button { padding: .55rem .4rem; }
+    #songs > li[data-key] { grid-template-columns: 3.8rem minmax(0, 1fr); }
+    .cover { width: 3.8rem; height: 3.8rem; }
+    #songs { max-height: 45vh; }
+
+    /* Player: artwork, song and close on top; previous, seek bar and next below. Clears the home bar. */
+    #player {
+      display: grid; grid-template-columns: auto 1fr auto; gap: .5rem .7rem; align-items: center;
+      grid-template-areas: "art np close" "prev audio next";
+      padding: .6rem 1rem calc(.6rem + env(safe-area-inset-bottom));
+    }
+    #player[hidden] { display: none; }
+    #npArt { grid-area: art; width: 2.6rem; height: 2.6rem; }
+    #player .np { grid-area: np; }
+    #closePlayer { grid-area: close; }
+    #prevBtn { grid-area: prev; }
+    #nextBtn { grid-area: next; }
+    #player audio { grid-area: audio; width: 100%; height: 2.4rem; }
+    #player .ctl { min-width: 2.75rem; height: 2.75rem; }
+    body.has-player { padding-bottom: calc(9rem + env(safe-area-inset-bottom)); }
   }
 </style>
 </head>
@@ -170,6 +321,7 @@
     <div class="run">
       <button id="runBtn">Dig up new picks</button>
       <div id="status" role="status"></div>
+      <p id="nextRun"><span id="nextRunText"></span> <a href="/settings">Settings</a></p>
     </div>
   </header>
 
@@ -185,27 +337,23 @@
       <div id="picks" class="md">
         <p class="empty">No picks yet. Press “Dig up new picks” to run your prompt.</p>
       </div>
-
-      <section class="prompt">
-        <div class="row">
-          <button class="ghost" id="editBtn" aria-expanded="false" aria-controls="promptEditor">Edit prompt</button>
-          <span id="saveMsg" role="status"></span>
-        </div>
-        <div id="promptEditor" hidden>
-          <h2>Prompt</h2>
-          <textarea id="prompt" spellcheck="false" aria-label="Prompt"></textarea>
-          <div class="row">
-            <button class="ghost" id="saveBtn">Save</button>
-            <button class="ghost" id="cancelBtn">Cancel</button>
-          </div>
-        </div>
-      </section>
     </main>
 
     <aside>
       <section class="search" role="search">
         <label for="search"><h2>Search</h2></label>
         <input id="search" type="search" placeholder="Artist, album, genre…" autocomplete="off">
+      </section>
+      <section id="playlistBox" class="playlist" hidden aria-labelledby="playlistHead">
+        <div class="pl-head">
+          <h2 id="playlistHead">Playlist</h2>
+          <span id="plCount"></span>
+        </div>
+        <p id="previewMsg" role="status"></p>
+        <div class="pl-progress" id="plProgress" hidden><span></span></div>
+        <button id="playAllBtn" hidden>▶ Play all</button>
+        <ol id="songs" aria-label="Songs in this playlist"></ol>
+        <div class="pl-foot"><button class="link" id="makePlaylistBtn" hidden>Make playlist</button></div>
       </section>
       <section>
         <h2>Earlier picks</h2>
@@ -215,26 +363,17 @@
         <summary>Archived (<span id="archivedCount">0</span>)</summary>
         <ul id="archived"></ul>
       </details>
-      <section class="schedule">
-        <h2>Schedule</h2>
-        <p id="schedSummary"></p>
-        <p id="schedNext"></p>
-        <button class="link" id="schedEditBtn" aria-expanded="false" aria-controls="schedForm">Change schedule</button>
-        <form id="schedForm" hidden>
-          <label class="check"><input type="checkbox" id="schedOn"> Dig up new picks automatically</label>
-          <fieldset class="days" id="schedDays">
-            <legend>On</legend>
-          </fieldset>
-          <label class="time-row">At <input type="time" id="schedTime" required> (server time)</label>
-          <div class="row">
-            <button class="ghost" type="submit">Save</button>
-            <button class="ghost" type="button" id="schedCancel">Cancel</button>
-          </div>
-          <p id="schedMsg" role="status"></p>
-        </form>
-      </section>
     </aside>
   </div>
+</div>
+
+<div id="player" hidden>
+  <img id="npArt" alt="" hidden>
+  <div class="np"><span id="npTitle"></span><span id="npSub"></span></div>
+  <button class="ctl" id="prevBtn" aria-label="Previous song" title="Previous">⏮</button>
+  <audio id="audio" controls preload="auto"></audio>
+  <button class="ctl" id="nextBtn" aria-label="Next song" title="Next">⏭</button>
+  <button class="ctl" id="closePlayer" aria-label="Stop and close the player" title="Close">✕</button>
 </div>
 
 <script>
@@ -272,6 +411,17 @@
       const heads = ths.map((th) => th.textContent.trim().toLowerCase());
       const ai = heads.indexOf("artist"), bi = heads.indexOf("album");
       if (ai < 0 || bi < 0) return;
+      const yi = heads.indexOf("year"), wi = heads.findIndex((h) => h.startsWith("why"));
+      table.querySelectorAll("tbody tr").forEach((tr) => {
+        const c = tr.children;
+        c[ai]?.classList.add("col-artist");
+        c[bi]?.classList.add("col-album");
+        if (yi >= 0) c[yi]?.classList.add("col-year");
+        if (wi >= 0) {
+          c[wi]?.classList.add("col-why");
+          c[wi]?.addEventListener("click", (e) => { if (!e.target.closest("a")) c[wi].classList.toggle("open"); });
+        }
+      });
       let li = heads.indexOf("bandcamp");
       if (li < 0) {
         li = ths.length;
@@ -317,6 +467,7 @@
       const artist = tr.children[ai]?.textContent.trim() || "";
       const album = tr.children[bi]?.textContent.trim() || "";
       const key = markKey(artist, album);
+      Object.assign(tr.dataset, { key, artist, album });
       const td = document.createElement("td");
       td.className = "mark";
       for (const [mark, label, title] of [["got", "Got", "I got this"], ["love", "♥", "Loved it"], ["pass", "Pass", "Not interested"]]) {
@@ -337,6 +488,7 @@
               body: JSON.stringify({ key, mark: next }),
             });
             if (next) marks[key] = next; else delete marks[key];
+            if (playlist) markSongs();
           } catch (e) {
             showMark(tr, before);
             setStatus(`Couldn’t save: ${e.message}`, true);
@@ -364,6 +516,7 @@
       : current && current !== lists.active[0] ? "Earlier picks" : "Latest picks";
     if (!searching) $("#picksMeta").textContent = current ? `Run on ${niceName(current)}` : "";
     $("#archiveBtn").hidden = searching || !current || archived;
+    if (searching || !current) $("#playlistBox").hidden = true;
     $("#restoreBtn").hidden = $("#deleteBtn").hidden = searching || !archived;
     document.querySelectorAll("#history button, #archived button").forEach((b) =>
       b.setAttribute("aria-current", String(!searching && b.dataset.name === current)));
@@ -383,6 +536,7 @@
     if (!searching) renderPicks(DOMPurify.sanitize(marked.parse(text)));
     if (lists.archived.includes(name)) $("#archivedBox").open = true;
     updateView();
+    if (!searching) loadPlaylist(name);
   }
 
   function fillList(el, names) {
@@ -416,6 +570,9 @@
   // Archive hides a list from "Earlier picks" (it still counts as suggested, so nothing repeats).
   // Only archived lists can be deleted. Marks live separately, so deleting a list keeps them.
   async function act(path, method, next) {
+    if (method !== "POST" || path.endsWith("/archive")) {  // archiving or deleting removes the previews
+      if (queue && queue.name === current) closePlayer();
+    }
     try {
       await api(path, { method });
       await loadHistory(false, next);
@@ -504,6 +661,264 @@
     if (showCurrent) showPick(current);
   }
 
+  // --- Preview playlist: a couple of songs per pick, downloaded by the server after each run ---
+  let playlist = null;      // the playlist for the list being shown
+  let playlistTimer = null;
+  let queue = null;         // what the player is playing: { name, tracks, i }
+  const audio = $("#audio");
+  const previewUrl = (name, file) => `/api/previews/${encodeURIComponent(name)}/${encodeURIComponent(file)}`;
+
+  async function loadPlaylist(name) {
+    clearTimeout(playlistTimer);
+    let pl;
+    try { pl = await api(`/api/picks/${encodeURIComponent(name)}/playlist`); }
+    catch { return; }
+    if (name !== current || searching) return;  // the page moved on while this loaded
+    playlist = { name, ...pl };
+    renderPreviewBar();
+    renderSongs();
+    addPlayLinks();
+    highlightPlaying();
+    if (pl.state === "building") playlistTimer = setTimeout(() => loadPlaylist(name), 4000);
+  }
+
+  function renderPreviewBar() {
+    const pl = playlist, n = pl.tracks.length;
+    const albums = new Set(pl.tracks.map((t) => markKey(t.artist, t.album))).size;
+    const building = pl.state === "building", p = pl.progress || {};
+    $("#plCount").textContent = n ? `${n} ${n === 1 ? "song" : "songs"} · ${albums} ${albums === 1 ? "album" : "albums"}` : "";
+    $("#previewMsg").textContent =
+      building ? (p.total ? `Downloading album ${Math.min(p.done + 1, p.total)} of ${p.total}…` : "Getting started…")
+      : pl.state === "failed" ? `Couldn’t make the playlist: ${pl.error || "unknown error"}`
+      : pl.state === "none" ? "No preview playlist for this list yet."
+      : n ? "" : "No previews found for these albums.";
+    $("#plProgress").hidden = !building;
+    $("#plProgress span").style.width = p.total ? `${(100 * p.done) / p.total}%` : "0";
+    $("#playAllBtn").hidden = !n;
+    $("#playAllBtn").textContent = `▶ Play all${building ? " so far" : ""}`;
+    $("#makePlaylistBtn").hidden = building;
+    $("#makePlaylistBtn").textContent = pl.state === "done" ? "Remake playlist" : "Make playlist";
+    $("#playlistBox").hidden = false;
+  }
+
+  // The playlist's songs grouped by album, each playable on its own.
+  // Marked albums get a tag (and Got/Pass ones are dimmed); the playing song shows moving bars.
+  const MARK_LABEL = { got: "Got", love: "♥", pass: "Pass" };
+
+  function renderSongs() {
+    const pl = playlist, groups = [];
+    pl.tracks.forEach((t, i) => {
+      const key = markKey(t.artist, t.album);
+      let g = groups.at(-1);
+      if (!g || g.key !== key) groups.push((g = { key, artist: t.artist, album: t.album, items: [] }));
+      g.items.push([t, i]);
+    });
+    const items = groups.map((g) => {
+      const li = document.createElement("li");
+      li.dataset.key = g.key;
+      li.innerHTML = `<img class="cover" alt="" loading="lazy" decoding="async"><div class="album-body"><div class="album-head"><span class="names"><span class="al"></span><span class="ar"></span></span><span class="tag" hidden></span></div><ol class="tracks"></ol></div>`;
+      const first = g.items[0][0], cover = li.querySelector(".cover");
+      cover.onerror = () => cover.removeAttribute("src");  // leaves the grey placeholder square
+      cover.src = first.art || `https://i.ytimg.com/vi/${first.video_id}/hqdefault.jpg`;
+      li.querySelector(".al").textContent = g.album;
+      li.querySelector(".ar").textContent = g.artist;
+      li.querySelector(".tracks").append(...g.items.map(([t, i]) => {
+        const row = document.createElement("li");
+        row.dataset.i = i;
+        row.innerHTML = `<button type="button"><span class="n">${i + 1}</span><span class="eq" aria-hidden="true"><i></i><i></i><i></i></span><span class="t"></span></button>`;
+        row.querySelector(".t").textContent = t.title;
+        row.querySelector("button").title = `${t.title} · ${t.artist}`;
+        row.querySelector("button").onclick = () => startQueue(pl.name, pl.tracks, i, g.key);
+        return row;
+      }));
+      return li;
+    });
+    const note = (text) => Object.assign(document.createElement("li"), { className: "note", textContent: text });
+    for (const m of pl.missing) items.push(note(`Not found: ${m.album} · ${m.artist}`));
+    for (const m of pl.skipped || []) items.push(note(`Left out, already marked: ${m.album} · ${m.artist}`));
+    $("#songs").replaceChildren(...items);
+    $("#songs").hidden = !items.length;
+    markSongs();
+  }
+
+  function markSongs() {
+    const playing = queue && playlist && queue.name === playlist.name ? queue.tracks[queue.i] : null;
+    $("#songs").querySelectorAll(":scope > li[data-key]").forEach((li) => {
+      const mark = marks[li.dataset.key], tag = li.querySelector(".tag");
+      li.classList.toggle("is-marked", mark === "got" || mark === "pass");
+      tag.hidden = !mark;
+      tag.textContent = MARK_LABEL[mark] || "";
+      tag.dataset.mark = mark || "";
+    });
+    $("#songs").querySelectorAll(".tracks li").forEach((row) => {
+      const isCurrent = !!playing && playing.file === playlist.tracks[row.dataset.i].file;
+      if (isCurrent && !row.classList.contains("is-current")) keepInView(row);
+      row.classList.toggle("is-current", isCurrent);
+    });
+  }
+
+  // Scroll the song list (not the page) so the playing song is visible.
+  function keepInView(row) {
+    const box = $("#songs"), top = row.offsetTop - box.offsetTop, bottom = top + row.offsetHeight;
+    if (top < box.scrollTop) box.scrollTop = top - 24;  // leave room for its album heading
+    else if (bottom > box.scrollTop + box.clientHeight) box.scrollTop = bottom - box.clientHeight + 8;
+  }
+
+  // A "▶ Play" link in each row's Listen cell, for albums that have previews.
+  function addPlayLinks() {
+    $("#picks").querySelectorAll("tbody tr").forEach((tr) => {
+      const key = tr.dataset.key, cell = tr.querySelector("td.listen");
+      if (!key || !cell || cell.querySelector(".play")) return;
+      const i = playlist.tracks.findIndex((t) => markKey(t.artist, t.album) === key);
+      if (i < 0) return;
+      const b = Object.assign(document.createElement("button"), { className: "link play", textContent: "▶ Play" });
+      b.setAttribute("aria-label", `Play previews from ${tr.dataset.album} by ${tr.dataset.artist}`);
+      b.onclick = () => startQueue(playlist.name, playlist.tracks, i, key);
+      cell.append(" · ", b);
+    });
+  }
+
+  // Albums marked Got or Pass are skipped as the queue moves on, including ones marked mid-listen.
+  // The album chosen with a row's ▶ Play ("pinned") plays even if it's marked.
+  const skippable = (t) => queue.pinned !== markKey(t.artist, t.album)
+    && ["got", "pass"].includes(marks[markKey(t.artist, t.album)]);
+
+  function startQueue(name, tracks, i = 0, pinned = null) {
+    queue = { name, tracks: [...tracks], i, pinned };
+    while (queue.i < queue.tracks.length && skippable(queue.tracks[queue.i])) queue.i++;
+    if (queue.i >= queue.tracks.length) {
+      queue = null;
+      $("#previewMsg").textContent = "Every album with previews here is marked Got or Pass.";
+      return;
+    }
+    playCurrent();
+  }
+
+  function playCurrent() {
+    const t = queue.tracks[queue.i];
+    audio.src = previewUrl(queue.name, t.file);
+    audio.play().catch(() => {});
+    $("#npTitle").textContent = `${t.title} — ${t.artist}`;
+    $("#npSub").textContent = `From ${t.album} · ${queue.i + 1} of ${queue.tracks.length} · ${niceName(queue.name)}`;
+    $("#player").hidden = false;
+    document.body.classList.add("has-player");
+    highlightPlaying();
+    // Older playlists have no art saved; the YouTube thumbnail stands in.
+    const art = t.art || `https://i.ytimg.com/vi/${t.video_id}/hqdefault.jpg`;
+    $("#npArt").src = art;
+    $("#npArt").hidden = false;
+    $("#npArt").onerror = () => { $("#npArt").hidden = true; };
+    if ("mediaSession" in navigator) {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: t.title, artist: t.artist, album: t.album, artwork: [{ src: art, sizes: "250x250" }],
+      });
+    }
+    scrobbleStart(queue.name, t);
+  }
+
+  // Scrobbling: the server passes these on to ListenBrainz when it's on in Settings.
+  // A song counts as a listen once you've heard half of it or 4 minutes, the usual rule.
+  // Only time actually played counts, so skipping ahead doesn't scrobble.
+  let listen = null;  // { name, file, startedAt, heard, last, sent }
+
+  function sendScrobble(kind) {
+    if (!listen) return;
+    fetch("/api/scrobble", {
+      method: "POST", keepalive: true, headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: listen.name, file: listen.file, kind, listened_at: listen.startedAt }),
+    }).catch(() => {});
+  }
+
+  function scrobbleStart(name, t) {
+    listen = { name, file: t.file, startedAt: Math.floor(Date.now() / 1000), heard: 0, last: null, sent: false };
+    sendScrobble("playing_now");
+  }
+
+  audio.addEventListener("timeupdate", () => {
+    if (!listen || listen.sent || audio.paused) return;
+    const now = audio.currentTime;
+    if (listen.last !== null && now > listen.last && now - listen.last < 2) listen.heard += now - listen.last;
+    listen.last = now;
+    const length = audio.duration;
+    if (length && isFinite(length) && length >= 30 && listen.heard >= Math.min(length / 2, 240)) {
+      listen.sent = true;
+      sendScrobble("single");
+    }
+  });
+  audio.addEventListener("seeking", () => listen && (listen.last = null));
+
+  function step(delta) {
+    if (!queue) return;
+    let i = queue.i + delta;
+    while (i >= 0 && i < queue.tracks.length && skippable(queue.tracks[i])) i += delta;
+    if (i < 0 || i >= queue.tracks.length) return;
+    queue.i = i;
+    playCurrent();
+  }
+
+  function highlightPlaying() {
+    const t = queue && queue.name === current && !searching ? queue.tracks[queue.i] : null;
+    const key = t ? markKey(t.artist, t.album) : null;
+    $("#picks").querySelectorAll("tbody tr").forEach((tr) => tr.classList.toggle("is-playing", !!key && tr.dataset.key === key));
+    if (playlist) markSongs();
+  }
+
+  function closePlayer() {
+    audio.pause();
+    audio.removeAttribute("src");
+    audio.load();
+    queue = null;
+    listen = null;
+    $("#player").hidden = true;
+    document.body.classList.remove("has-player");
+    highlightPlaying();
+  }
+
+  audio.addEventListener("ended", () => step(1));
+  audio.addEventListener("pause", () => document.body.classList.add("is-paused"));
+  audio.addEventListener("play", () => document.body.classList.remove("is-paused"));
+  $("#prevBtn").onclick = () => step(-1);
+  $("#nextBtn").onclick = () => step(1);
+  $("#closePlayer").onclick = closePlayer;
+  $("#playAllBtn").onclick = () => playlist && startQueue(playlist.name, playlist.tracks, 0);
+  // Media Session: lets the OS (Windows media flyout, taskbar widgets, media keys, lock screens)
+  // show what's playing and control it. Browsers only offer it on secure pages (HTTPS or localhost).
+  if ("mediaSession" in navigator) {
+    const ms = navigator.mediaSession;
+    const handlers = {
+      play: () => audio.play(),
+      pause: () => audio.pause(),
+      stop: closePlayer,
+      previoustrack: () => step(-1),
+      nexttrack: () => step(1),
+      seekbackward: (d) => (audio.currentTime = Math.max(0, audio.currentTime - (d.seekOffset || 10))),
+      seekforward: (d) => (audio.currentTime = Math.min(audio.duration || 0, audio.currentTime + (d.seekOffset || 10))),
+      seekto: (d) => (audio.currentTime = d.seekTime),
+    };
+    for (const [action, fn] of Object.entries(handlers)) {
+      try { ms.setActionHandler(action, fn); } catch {}  // not every browser knows every action
+    }
+    const syncPosition = () => {
+      if (!audio.duration || !isFinite(audio.duration)) return;
+      try { ms.setPositionState({ duration: audio.duration, position: Math.min(audio.currentTime, audio.duration), playbackRate: audio.playbackRate }); } catch {}
+    };
+    audio.addEventListener("play", () => { ms.playbackState = "playing"; syncPosition(); });
+    audio.addEventListener("pause", () => { ms.playbackState = queue ? "paused" : "none"; syncPosition(); });
+    audio.addEventListener("loadedmetadata", syncPosition);
+    audio.addEventListener("seeked", syncPosition);
+    audio.addEventListener("ratechange", syncPosition);
+  }
+
+  $("#makePlaylistBtn").onclick = async () => {
+    if (!playlist) return;
+    if (playlist.state === "done" && !confirm("Make this list’s preview playlist again? The current songs are deleted and downloaded fresh.")) return;
+    if (queue && queue.name === playlist.name) closePlayer();
+    try {
+      await api(`/api/picks/${encodeURIComponent(playlist.name)}/playlist`, { method: "POST" });
+      loadPlaylist(playlist.name);
+    } catch (e) { $("#previewMsg").textContent = e.message; }
+  };
+
   let searchTimer = null;
   $("#search").addEventListener("input", () => {
     clearTimeout(searchTimer);
@@ -542,128 +957,23 @@
     catch (e) { setStatus(e.message, true); }
   };
 
-  // The prompt stays hidden until "Edit prompt" is pressed, so it can't be changed by accident.
-  function flash(msg) {
-    $("#saveMsg").textContent = msg;
-    setTimeout(() => ($("#saveMsg").textContent = ""), 3000);
-  }
-
-  function showEditor(open) {
-    $("#promptEditor").hidden = !open;
-    $("#editBtn").hidden = open;
-    $("#editBtn").setAttribute("aria-expanded", String(open));
-  }
-
-  $("#editBtn").onclick = async () => {
-    try {
-      $("#prompt").value = (await api("/api/prompt")).text;  // always edit the latest saved version
-      showEditor(true);
-      $("#prompt").focus();
-    } catch (e) { flash(`Couldn’t load the prompt: ${e.message}`); }
-  };
-
-  $("#cancelBtn").onclick = () => {
-    showEditor(false);
-    $("#editBtn").focus();
-  };
-
-  $("#saveBtn").onclick = async () => {
-    const text = $("#prompt").value;
-    if (!text.trim()) { flash("The prompt can’t be empty."); return; }
-    try {
-      await api("/api/prompt", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
-      });
-      showEditor(false);
-      $("#editBtn").focus();
-      flash("Prompt saved");
-    } catch (e) { flash(e.message); }
-  };
-
-  // Schedule: automatic runs, set from the sidebar and run by the server.
-  const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-  let schedule = null;
-
-  const clock = (hhmm) => {
-    const [h, m] = hhmm.split(":").map(Number);
-    return new Date(2000, 0, 1, h, m).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  };
-  const joinWords = (xs) => xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`;
-
-  function describeSchedule(s) {
-    if (!s.enabled) return "Off. Picks are only dug up when you press the button.";
-    const d = s.days;
-    const when = d.length === 7 ? "Every day"
-      : d.join() === "0,1,2,3,4" ? "Weekdays"
-      : d.join() === "5,6" ? "Weekends"
-      : d.length === 1 ? `Every ${DAYS[d[0]]}`
-      : joinWords(d.map((i) => DAYS[i].slice(0, 3)));
-    return `${when} at ${clock(s.time)}`;
-  }
-
-  async function loadSchedule() {
-    schedule = await api("/api/schedule");
-    $("#schedSummary").textContent = describeSchedule(schedule);
-    $("#schedNext").textContent = schedule.next
-      ? "Next run: " + new Date(schedule.next).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+  // "Next run" under the button. The schedule itself is set on the settings page.
+  async function loadNextRun() {
+    const s = await api("/api/schedule");
+    $("#nextRunText").textContent = s.next
+      ? "Next run " + new Date(s.next).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" }) + " ·"
       : "";
   }
-
-  $("#schedDays").append(...DAYS.map((name, i) => {
-    const label = document.createElement("label");
-    label.innerHTML = `<input type="checkbox" value="${i}" aria-label="${name}"><span aria-hidden="true">${name.slice(0, 3)}</span>`;
-    return label;
-  }));
-  const dayBoxes = () => [...document.querySelectorAll("#schedDays input")];
-  const syncDayBoxes = () => dayBoxes().forEach((b) => (b.disabled = !$("#schedOn").checked));
-
-  function showSchedForm(open) {
-    $("#schedForm").hidden = !open;
-    $("#schedEditBtn").hidden = open;
-    $("#schedEditBtn").setAttribute("aria-expanded", String(open));
-    $("#schedMsg").textContent = "";
-  }
-
-  $("#schedEditBtn").onclick = async () => {
-    try { await loadSchedule(); } catch (e) { setStatus(`Couldn’t load the schedule: ${e.message}`, true); return; }
-    $("#schedOn").checked = schedule.enabled;
-    dayBoxes().forEach((b) => (b.checked = schedule.days.includes(Number(b.value))));
-    $("#schedTime").value = schedule.time;
-    syncDayBoxes();
-    showSchedForm(true);
-    $("#schedOn").focus();
-  };
-  $("#schedOn").onchange = syncDayBoxes;
-  $("#schedCancel").onclick = () => { showSchedForm(false); $("#schedEditBtn").focus(); };
-
-  $("#schedForm").onsubmit = async (e) => {
-    e.preventDefault();
-    const body = {
-      enabled: $("#schedOn").checked,
-      days: dayBoxes().filter((b) => b.checked).map((b) => Number(b.value)),
-      time: $("#schedTime").value,
-    };
-    if (body.enabled && !body.days.length) { $("#schedMsg").textContent = "Pick at least one day."; return; }
-    if (!body.time) { $("#schedMsg").textContent = "Pick a time."; return; }
-    try {
-      await api("/api/schedule", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      await loadSchedule();
-      showSchedForm(false);
-      $("#schedEditBtn").focus();
-    } catch (err) { $("#schedMsg").textContent = err.message; }
-  };
 
   // Notice runs started by the schedule (or another tab), and keep "Next run" current.
   setInterval(() => {
     if (!poll) checkState().catch(() => {});
-    if ($("#schedForm").hidden) loadSchedule().catch(() => {});
+    loadNextRun().catch(() => {});
   }, 60000);
 
   (async () => {
     try {
-      loadSchedule().catch(() => ($("#schedSummary").textContent = "Couldn’t load the schedule."));
+      loadNextRun().catch(() => {});
       marks = await api("/api/marks");
       await loadHistory(false);
       await checkState();

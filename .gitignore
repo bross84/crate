@@ -8,6 +8,7 @@ marks.json
 schedule.json
 got.json
 picks/
+previews/
 *.tmp
 
 # Local Claude Code settings
@@ -16,3 +17,7 @@ picks/
 # Python
 __pycache__/
 *.pyc
+
+# Accounts (tokens, passwords) and unsent listens
+settings.json
+listens.pending.json

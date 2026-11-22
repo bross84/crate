@@ -1,11 +1,12 @@
 # /// script
-# requires-python = ">=3.10"
-# dependencies = ["fastapi", "uvicorn", "mcp>=2.3,<3", "openai>=3,<4"]
+# requires-python = ">=3.11"
+# dependencies = ["fastapi", "uvicorn", "mcp>=2.3,<3", "openai>=3,<4", "httpx", "yt-dlp[default]"]
 # ///
 """Crate: a small web front end for the music-discovery prompt.
 
 Serves index.html, lets you edit prompt.md, and runs the prompt on demand
-with only the MCP tools from .mcp.json. Each run is saved to
+with only the MCP servers from .mcp.json (or .mcp.example.json), filled in
+with the accounts saved on the settings page. Each run is saved to
 picks/YYYY-MM-DD_HHMM.md.
 
 Two backends, picked with CRATE_BACKEND (environment or .env file):
@@ -14,16 +15,22 @@ Two backends, picked with CRATE_BACKEND (environment or .env file):
                     with Crate itself running the MCP servers (see agent.py)
 """
 import asyncio
+import contextlib
+import hashlib
 import json
 import os
 import pathlib
 import re
+import shutil
+import secrets
 import subprocess
+import tempfile
 import threading
 import time
 from datetime import datetime, timedelta
 from typing import Literal
 
+import httpx
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, PlainTextResponse
@@ -37,6 +44,9 @@ PROMPT_EXAMPLE = BASE / "prompt.example.md"
 MARKS = BASE / "marks.json"  # {"artist|album" (lowercased): "got" | "love" | "pass"}
 SCHEDULE = BASE / "schedule.json"  # {"enabled": bool, "days": [0-6, Monday = 0], "time": "HH:MM"}
 OLD_GOT = BASE / "got.json"  # earlier format: a list of keys marked as got
+PREVIEWS = BASE / "previews"  # previews/<run>/: downloaded preview songs and playlist.json
+SETTINGS = BASE / "settings.json"  # accounts and scrobbling, from the settings page (holds tokens and passwords)
+PENDING_LISTENS = BASE / "listens.pending.json"  # listens ListenBrainz didn't take yet; sent with the next one
 ARCHIVE.mkdir(parents=True, exist_ok=True)
 
 
@@ -73,8 +83,9 @@ TIMEOUT_SECONDS = 15 * 60
 PORT = 8095
 
 app = FastAPI()
-state = {"running": False, "started": None, "error": None}
+state = {"running": False, "started": None, "error": None, "playlist": None}
 lock = threading.Lock()
+playlist_lock = threading.Lock()  # one playlist build at a time
 
 
 def read_prompt():
@@ -114,9 +125,18 @@ def build_prompt():
         rows = [" – ".join(key.split("|", 1)) for key, mark in sorted(marks.items()) if mark == kind]
         return "\n".join(f"- {r}" for r in rows) or "(none yet)"
 
+    accounts = read_settings()
+    who = []
+    if accounts["listenbrainz"]["username"]:
+        who.append(f"The ListenBrainz tools use my account ({accounts['listenbrainz']['username']}) by default.")
+    if accounts["lastfm"]["username"] and accounts["lastfm"]["api_key"]:
+        who.append(f"My Last.fm username is {accounts['lastfm']['username']}.")
+    who = f"## My accounts\n{' '.join(who)}\n\n" if who else ""
+
     return (
         f"Today is {datetime.now():%Y-%m-%d}.\n\n"
         f"{prompt}\n\n"
+        f"{who}"
         "## Checking my Navidrome library\n"
         "Use Navidrome's search_all to check whether I own an artist or album: one call returns "
         "matching artists and albums. Don't use search_artists. It rejects every call in "
@@ -138,8 +158,9 @@ def build_prompt():
     )
 
 
-def run_claude(prompt):
-    cmd = ["claude", "-p", prompt, "--allowedTools", *ALLOWED_TOOLS]
+def run_claude(prompt, mcp_config):
+    cmd = ["claude", "-p", prompt, "--mcp-config", str(mcp_config), "--strict-mcp-config",
+           "--allowedTools", *ALLOWED_TOOLS]
     if CLAUDE_MODEL:
         cmd += ["--model", CLAUDE_MODEL]
     try:
@@ -152,13 +173,13 @@ def run_claude(prompt):
     return output
 
 
-def run_openai(prompt):
+def run_openai(prompt, mcp_config):
     import agent
 
     try:
         output = agent.run_sync(
             prompt, base_url=BASE_URL, api_key=API_KEY, model=MODEL,
-            mcp_json=BASE / ".mcp.json", timeout=TIMEOUT_SECONDS,
+            mcp_json=mcp_config, timeout=TIMEOUT_SECONDS,
         )
     except asyncio.TimeoutError:
         raise TimeoutError
@@ -168,21 +189,339 @@ def run_openai(prompt):
 
 
 def run_picks():
+    name = None
     try:
-        output = (run_openai if BACKEND == "openai" else run_claude)(build_prompt())
-        stamp = datetime.now().strftime("%Y-%m-%d_%H%M")
-        (PICKS / f"{stamp}.md").write_text(output + "\n")
+        with mcp_config() as config:
+            output = (run_openai if BACKEND == "openai" else run_claude)(build_prompt(), config)
+        name = datetime.now().strftime("%Y-%m-%d_%H%M") + ".md"
+        (PICKS / name).write_text(output + "\n")
     except TimeoutError:
         state["error"] = f"Stopped after {TIMEOUT_SECONDS // 60} minutes without finishing."
     except Exception as exc:
         state["error"] = f"Run failed: {str(exc)[-1500:]}"
     finally:
+        if name and not state["playlist"]:  # mark it before the page sees the run finish
+            state["playlist"] = {"name": name, "done": 0, "total": 0}
         state["running"] = False
+    if name:
+        build_playlist(name)  # the picks show right away; the playlist fills in behind them
+
+
+# --- Accounts: saved from the settings page, handed to the MCP servers on each run ---
+
+# service -> field -> the environment variable its MCP server reads (None: only Crate uses it)
+ACCOUNT_FIELDS = {
+    "listenbrainz": {"username": "LISTENBRAINZ_USERNAME", "token": "LISTENBRAINZ_TOKEN"},
+    "lastfm": {"username": None, "api_key": "LASTFM_API_KEY"},
+    "navidrome": {"url": "NAVIDROME_URL", "username": "NAVIDROME_USERNAME", "password": "NAVIDROME_PASSWORD"},
+}
+SECRET_FIELDS = {"token", "api_key", "password"}  # never sent back to the page
+settings_lock = threading.Lock()
+
+
+def mcp_servers():
+    """Server definitions: your .mcp.json if there is one, else the example's."""
+    for path in (BASE / ".mcp.json", BASE / ".mcp.example.json"):
+        try:
+            return json.loads(path.read_text()).get("mcpServers", {})
+        except FileNotFoundError:
+            continue
+    return {}
+
+
+def read_settings():
+    try:
+        saved = json.loads(SETTINGS.read_text())
+    except (FileNotFoundError, ValueError):
+        saved = None
+    if saved is None:  # first start: carry over the accounts already in .mcp.json
+        servers = {} if not (BASE / ".mcp.json").exists() else mcp_servers()
+        saved = {service: {field: (servers.get(service, {}).get("env") or {}).get(var, "") if var else ""
+                           for field, var in fields.items()}
+                 for service, fields in ACCOUNT_FIELDS.items()}
+        if not saved["listenbrainz"]["token"]:
+            saved["listenbrainz"]["token"] = os.environ.get("LISTENBRAINZ_TOKEN", "")
+        if any(v for fields in saved.values() for v in fields.values()):
+            write_settings(saved)
+    settings = {service: {field: str((saved.get(service) or {}).get(field) or "") for field in fields}
+                for service, fields in ACCOUNT_FIELDS.items()}
+    settings["scrobble"] = saved.get("scrobble", True) is not False
+    return settings
+
+
+def write_settings(settings):
+    tmp = SETTINGS.with_suffix(".tmp")
+    tmp.touch(mode=0o600)
+    tmp.write_text(json.dumps(settings, indent=2))
+    tmp.replace(SETTINGS)
+
+
+@contextlib.contextmanager
+def mcp_config():
+    """A private, temporary MCP config for one run: the servers with your saved accounts filled in.
+    Last.fm and Navidrome are left out when they aren't set up."""
+    accounts = read_settings()
+    servers = {}
+    for name, server in mcp_servers().items():
+        server = json.loads(json.dumps(server))
+        env = server.setdefault("env", {})
+        if name in ACCOUNT_FIELDS:
+            for field, var in ACCOUNT_FIELDS[name].items():
+                if var:
+                    env[var] = accounts[name][field]
+        if "LASTFM_API_KEY" in env:  # navidrome-mcp also uses the Last.fm key, when there is one
+            env["LASTFM_API_KEY"] = accounts["lastfm"]["api_key"]
+        if name == "lastfm" and not accounts["lastfm"]["api_key"]:
+            continue
+        if name == "navidrome" and not accounts["navidrome"]["url"]:
+            continue
+        servers[name] = server
+    fd, path = tempfile.mkstemp(prefix="crate-mcp-", suffix=".json")  # mkstemp files are owner-only
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump({"mcpServers": servers}, f)
+        yield pathlib.Path(path)
+    finally:
+        os.unlink(path)
+
+
+def public_settings():
+    """Settings for the page: secrets only say whether they're set, plus their last 4 characters."""
+    settings = read_settings()
+    out = {"scrobble": settings["scrobble"]}
+    for service, fields in ACCOUNT_FIELDS.items():
+        out[service] = {}
+        for field in fields:
+            value = settings[service][field]
+            if field in SECRET_FIELDS:
+                out[service][field] = {"set": bool(value), "hint": value[-4:] if len(value) >= 12 else ""}
+            else:
+                out[service][field] = value
+    return out
+
+
+class SettingsIn(BaseModel):
+    # {service: {field: value}}. A secret left out or null keeps the saved one; "" removes it.
+    listenbrainz: dict[str, str | None] = {}
+    lastfm: dict[str, str | None] = {}
+    navidrome: dict[str, str | None] = {}
+    scrobble: bool | None = None
+
+
+def merged_settings(body: SettingsIn):
+    settings = read_settings()
+    for service, fields in ACCOUNT_FIELDS.items():
+        for field, value in (getattr(body, service) or {}).items():
+            if field in fields and value is not None:
+                settings[service][field] = value.strip()
+    if settings["navidrome"]["url"]:
+        settings["navidrome"]["url"] = settings["navidrome"]["url"].rstrip("/")
+        if not re.match(r"https?://", settings["navidrome"]["url"]):
+            raise HTTPException(400, "The Navidrome address needs to start with http:// or https://.")
+    if body.scrobble is not None:
+        settings["scrobble"] = body.scrobble
+    return settings
+
+
+@app.get("/api/settings")
+def get_settings():
+    return public_settings()
+
+
+@app.put("/api/settings")
+def put_settings(body: SettingsIn):
+    with settings_lock:
+        write_settings(merged_settings(body))
+    return public_settings()
+
+
+LB_API = "https://api.listenbrainz.org/1"
+
+
+def check_account(service, a):
+    """Try an account's details. Returns a sentence saying how it went; raises ValueError if they don't work."""
+    with httpx.Client(timeout=20, headers={"User-Agent": "Crate (self-hosted music discovery)"}) as http:
+        if service == "listenbrainz":
+            if not a["username"]:
+                raise ValueError("Enter your ListenBrainz username.")
+            if a["token"]:
+                r = http.get(f"{LB_API}/validate-token", headers={"Authorization": f"Token {a['token']}"})
+                r.raise_for_status()
+                info = r.json()
+                if not info.get("valid"):
+                    raise ValueError("ListenBrainz says that token isn't valid.")
+                if info.get("user_name", "").lower() != a["username"].lower():
+                    raise ValueError(f"That token belongs to {info.get('user_name')}, not {a['username']}.")
+                return f"Connected as {info['user_name']}."
+            r = http.get(f"{LB_API}/user/{a['username']}/listen-count")
+            if r.status_code == 404:
+                raise ValueError(f"ListenBrainz has no user called {a['username']}.")
+            r.raise_for_status()
+            return (f"Found {a['username']}. Without a token, Crate can't scrobble "
+                    "and picks preview songs less well.")
+        if service == "lastfm":
+            if not a["api_key"]:
+                raise ValueError("Enter a Last.fm API key.")
+            params = {"api_key": a["api_key"], "format": "json"}
+            params.update({"method": "user.getinfo", "user": a["username"]} if a["username"]
+                          else {"method": "artist.getinfo", "artist": "Cher"})
+            info = http.get("https://ws.audioscrobbler.com/2.0/", params=params).json()
+            if "error" in info:
+                raise ValueError(f"Last.fm says: {info.get('message', 'error')}")
+            return f"Connected as {a['username']}." if a["username"] else "The API key works."
+        if service == "navidrome":
+            if not (a["url"] and a["username"] and a["password"]):
+                raise ValueError("Enter the Navidrome address, username and password.")
+            salt = secrets.token_hex(6)
+            r = http.get(f"{a['url']}/rest/ping.view", params={
+                "u": a["username"], "s": salt, "t": hashlib.md5((a["password"] + salt).encode()).hexdigest(),
+                "v": "1.16.1", "c": "crate", "f": "json",
+            })
+            r.raise_for_status()
+            reply = r.json().get("subsonic-response", {})
+            if reply.get("status") != "ok":
+                raise ValueError(f"Navidrome says: {reply.get('error', {}).get('message', 'login failed')}")
+            return f"Connected to Navidrome {reply.get('serverVersion', '')}".strip() + "."
+    raise HTTPException(404, "No such account.")
+
+
+@app.post("/api/settings/test/{service}")
+def test_account(service: str, body: SettingsIn):
+    """Try the details on the page (unsaved ones too) without saving them."""
+    if service not in ACCOUNT_FIELDS:
+        raise HTTPException(404, "No such account.")
+    try:
+        return {"ok": True, "message": check_account(service, merged_settings(body)[service])}
+    except ValueError as exc:
+        return {"ok": False, "message": str(exc)}
+    except httpx.TimeoutException:
+        return {"ok": False, "message": "No answer after 20 seconds. The service may be down; try again later."}
+    except (httpx.HTTPError, json.JSONDecodeError) as exc:
+        return {"ok": False, "message": f"Couldn't check: {str(exc)[:200] or type(exc).__name__}"}
+
+
+# --- Scrobbling: the player reports a song when it starts and once you've heard half of it ---
+
+class ScrobbleIn(BaseModel):
+    name: str
+    file: str
+    kind: Literal["playing_now", "single"]
+    listened_at: int | None = None  # when the song started (Unix seconds); for "single"
+
+
+def listen_payload(track, listened_at=None):
+    info = {"media_player": "Crate", "submission_client": "Crate", "music_service": "youtube.com",
+            "origin_url": f"https://www.youtube.com/watch?v={track.get('video_id', '')}"}
+    if track.get("seconds"):
+        info["duration_ms"] = int(track["seconds"]) * 1000
+    if track.get("recording_mbid"):
+        info["recording_mbid"] = track["recording_mbid"]
+    listen = {"track_metadata": {"artist_name": track["artist"], "track_name": track["title"],
+                                 "release_name": track["album"], "additional_info": info}}
+    if listened_at:
+        listen["listened_at"] = listened_at
+    return listen
+
+
+def submit_listens(token, listen_type, listens):
+    r = httpx.post(f"{LB_API}/submit-listens", timeout=20,
+                   headers={"Authorization": f"Token {token}"},
+                   json={"listen_type": listen_type, "payload": listens})
+    r.raise_for_status()
+
+
+@app.post("/api/scrobble")
+def scrobble(body: ScrobbleIn):
+    settings = read_settings()
+    token = settings["listenbrainz"]["token"]
+    if not (settings["scrobble"] and token):
+        return {"sent": False, "reason": "Scrobbling is off or there's no ListenBrainz token."}
+    find_pick(body.name)  # a real run name, not a path
+    try:
+        tracks = json.loads((preview_dir(body.name) / "playlist.json").read_text())["tracks"]
+        track = next(t for t in tracks if t["file"] == body.file)
+    except (FileNotFoundError, ValueError, KeyError, StopIteration):
+        raise HTTPException(404, "No such preview song.")
+    if body.kind == "playing_now":
+        try:
+            submit_listens(token, "playing_now", [listen_payload(track)])
+        except httpx.HTTPError:
+            return {"sent": False}  # only a live status; not worth keeping
+        return {"sent": True}
+
+    now = int(time.time())
+    listen = listen_payload(track, min(body.listened_at or now, now))
+    with settings_lock:  # keep listens ListenBrainz couldn't take, and send them with the next one
+        try:
+            pending = json.loads(PENDING_LISTENS.read_text())
+        except (FileNotFoundError, ValueError):
+            pending = []
+        try:
+            if pending:
+                submit_listens(token, "import", pending)
+                pending = []
+            submit_listens(token, "single", [listen])
+            sent = True
+        except httpx.HTTPError:
+            pending = (pending + [listen])[-500:]
+            sent = False
+        if pending:
+            PENDING_LISTENS.write_text(json.dumps(pending))
+        else:
+            PENDING_LISTENS.unlink(missing_ok=True)
+    return {"sent": sent, "pending": len(pending)}
+
+
+# --- Preview playlists: a couple of songs per pick, downloaded to previews/<run>/ ---
+
+def listenbrainz_token():
+    return read_settings()["listenbrainz"]["token"]
+
+
+def preview_dir(name):
+    return PREVIEWS / name.removesuffix(".md")
+
+
+def build_playlist(name):
+    """Download a run's preview songs. False if another build is already going."""
+    import previews
+
+    if not playlist_lock.acquire(blocking=False):
+        if (state["playlist"] or {}).get("name") == name and not state["playlist"]["total"]:
+            state["playlist"] = None  # drop this run's placeholder; another build holds the lock
+        return False
+    try:
+        path, _ = find_pick(name)
+        folder = preview_dir(name)
+        shutil.rmtree(folder, ignore_errors=True)
+        state["playlist"] = {"name": name, "done": 0, "total": 0}
+        skip = {key for key, mark in read_marks().items() if mark in ("got", "pass")}
+        previews.build(
+            path.read_text(), folder, listenbrainz_token(), skip=skip,
+            progress=lambda done, total: state.update(playlist={"name": name, "done": done, "total": total}),
+        )
+    except Exception as exc:
+        (preview_dir(name)).mkdir(parents=True, exist_ok=True)
+        (preview_dir(name) / "playlist.json").write_text(json.dumps(
+            {"state": "failed", "error": str(exc)[-500:], "tracks": [], "missing": []}))
+    finally:
+        state["playlist"] = None
+        playlist_lock.release()
+    return True
+
+
+def remove_playlist(name):
+    shutil.rmtree(preview_dir(name), ignore_errors=True)
 
 
 @app.get("/")
 def index():
     return FileResponse(BASE / "index.html")
+
+
+@app.get("/settings")
+def settings():
+    return FileResponse(BASE / "settings.html")
 
 
 @app.get("/api/state")
@@ -350,6 +689,7 @@ def archive_pick(name: str):
     path, archived = find_pick(name)
     if not archived:
         path.replace(ARCHIVE / name)
+        remove_playlist(name)
     return {"ok": True}
 
 
@@ -368,7 +708,44 @@ def delete_pick(name: str):
     if not archived:
         raise HTTPException(409, "Archive this run before deleting it.")
     path.unlink()
+    remove_playlist(name)
     return {"ok": True}
+
+
+@app.get("/api/picks/{name}/playlist")
+def get_playlist(name: str):
+    find_pick(name)
+    building = state["playlist"] if (state["playlist"] or {}).get("name") == name else None
+    try:
+        playlist = json.loads((preview_dir(name) / "playlist.json").read_text())
+    except (FileNotFoundError, ValueError):
+        playlist = {"state": "building" if building else "none", "tracks": [], "missing": []}
+    if building:
+        playlist.update(state="building", progress=building)
+    return playlist
+
+
+@app.post("/api/picks/{name}/playlist", status_code=202)
+def make_playlist(name: str):
+    find_pick(name)
+    if state["playlist"] or playlist_lock.locked():
+        raise HTTPException(409, "Another playlist is being made. Try again when it's done.")
+    state["playlist"] = {"name": name, "done": 0, "total": 0}
+    threading.Thread(target=build_playlist, args=(name,), daemon=True).start()
+    return {"ok": True}
+
+
+PREVIEW_FILE = re.compile(r"\d{2}\.(webm|m4a|mp4|opus|ogg)")
+
+
+@app.get("/api/previews/{name}/{file}")
+def get_preview(name: str, file: str):
+    find_pick(name)
+    path = preview_dir(name) / file
+    if not PREVIEW_FILE.fullmatch(file) or not path.exists():
+        raise HTTPException(404, "No such preview.")
+    media = {"webm": "audio/webm", "m4a": "audio/mp4", "mp4": "audio/mp4", "opus": "audio/ogg", "ogg": "audio/ogg"}
+    return FileResponse(path, media_type=media[path.suffix[1:]])
 
 
 if __name__ == "__main__":
