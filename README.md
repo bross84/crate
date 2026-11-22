@@ -14,7 +14,11 @@ Then mark each pick:
 
 Your marks are fed back into every future run. Loved albums count most, Got albums count as liked, and passed albums are a mild "less of this" hint. Marked albums and anything from the last 12 runs are never suggested again.
 
-Each list also gets a **preview playlist**: after a run, Crate downloads the 2 most popular songs from each album and plays them in a player at the bottom of the page. Press **▶ Play previews** under **Playlist** in the sidebar for all of them, **▶ Play** on a row for one album, or open **Show songs** to pick a song, and mark albums as you listen. Albums you've marked Got or Pass are skipped. See [Preview playlists](#preview-playlists).
+Each list also gets a **preview playlist**: after a run, Crate downloads the 2 most popular songs from each album and plays them in a player at the bottom of the page. Press **▶ Play all** under **Playlist** in the sidebar for all of them, **▶ Play** on a row for one album, or a song in the playlist to start there, and mark albums as you listen. Albums you've marked Got or Pass are skipped. The player works with your computer's media keys and media controls. See [Preview playlists](#preview-playlists).
+
+On a phone, the playlist comes first and the picks turn into cards. On an iPhone, Safari's **Share → Add to Home Screen** gives Crate its own icon.
+
+<p align="center"><img src="docs/screenshot-phone.png" width="320" alt="Crate on an iPhone: the Dig up new picks button, then the preview playlist with album covers, Slint's Breadcrumb Trail highlighted as playing, and the player along the bottom"></p>
 
 Use **Search** in the sidebar to find a pick across all your lists, by artist, album, year or any word in the description.
 
